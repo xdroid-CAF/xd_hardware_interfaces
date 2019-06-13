@@ -455,8 +455,8 @@ TEST_F(GraphicsComposerReadbackTest, DeviceAndClientComposition) {
     void* clientData = mGralloc->lock(clientBufferHandle, clientUsage, clientAccessRegion, -1);
     std::vector<IComposerClient::Color> clientColors(mDisplayWidth * mDisplayHeight);
     ReadbackHelper::fillColorsArea(clientColors, mDisplayWidth, clientFrame, RED);
-    ASSERT_NO_FATAL_FAILURE(ReadbackHelper::fillBuffer(mDisplayWidth, mDisplayHeight,
-                                                       clientStride, clientData, PixelFormat::RGBA_8888,
+    ASSERT_NO_FATAL_FAILURE(ReadbackHelper::fillBuffer(mDisplayWidth, mDisplayHeight, clientStride,
+                                                       clientData, PixelFormat::RGBA_8888,
                                                        clientColors));
     int clientFence = mGralloc->unlock(clientBufferHandle);
     if (clientFence != -1) {
