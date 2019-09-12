@@ -34,7 +34,7 @@ using android::hardware::cas::V1_0::IMediaCasService;
 
 int main() {
     #ifdef ARCH_ARM_32
-        android::hardware::ProcessState::initWithMmapSize((size_t)16384);
+        android::hardware::ProcessState::initWithMmapSize((size_t)32768);
     #endif
 
     ALOGD("android.hardware.cas@1.0-service starting...");
