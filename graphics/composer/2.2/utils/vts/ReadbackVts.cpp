@@ -34,6 +34,65 @@ void TestLayer::write(const std::shared_ptr<CommandWriterBase>& writer) {
     writer->setLayerBlendMode(mBlendMode);
 }
 
+const std::vector<ColorMode> ReadbackHelper::colorModes = {ColorMode::SRGB, ColorMode::DISPLAY_P3};
+const std::vector<Dataspace> ReadbackHelper::dataspaces = {Dataspace::V0_SRGB,
+                                                           Dataspace::DISPLAY_P3};
+
+std::string ReadbackHelper::getColorModeString(ColorMode mode) {
+    switch (mode) {
+        case ColorMode::SRGB:
+            return std::string("SRGB");
+        case ColorMode::DISPLAY_P3:
+            return std::string("DISPLAY_P3");
+        default:
+            return std::string("Unsupported color mode for readback");
+    }
+}
+
+std::string ReadbackHelper::getDataspaceString(Dataspace dataspace) {
+    switch (dataspace) {
+        case Dataspace::V0_SRGB:
+            return std::string("V0_SRGB");
+        case Dataspace::DISPLAY_P3:
+            return std::string("DISPLAY_P3");
+        case Dataspace::UNKNOWN:
+            return std::string("UNKNOWN");
+        default:
+            return std::string("Unsupported dataspace for readback");
+    }
+}
+
+Dataspace ReadbackHelper::getDataspaceForColorMode(ColorMode mode) {
+    switch (mode) {
+        case ColorMode::DISPLAY_P3:
+            return Dataspace::DISPLAY_P3;
+        case ColorMode::SRGB:
+        default:
+            return Dataspace::UNKNOWN;
+    }
+}
+
+LayerSettings TestLayer::toRenderEngineLayerSettings() {
+    LayerSettings layerSettings;
+
+    layerSettings.alpha = half(mAlpha);
+    layerSettings.disableBlending = mBlendMode == IComposerClient::BlendMode::NONE;
+    layerSettings.geometry.boundaries = FloatRect(
+            static_cast<float>(mDisplayFrame.left), static_cast<float>(mDisplayFrame.top),
+            static_cast<float>(mDisplayFrame.right), static_cast<float>(mDisplayFrame.bottom));
+
+    const mat4 translation = mat4::translate(
+            vec4((mTransform & Transform::FLIP_H ? -mDisplayFrame.right : 0.0f),
+                 (mTransform & Transform::FLIP_V ? -mDisplayFrame.bottom : 0.0f), 0.0f, 1.0f));
+
+    const mat4 scale = mat4::scale(vec4(mTransform & Transform::FLIP_H ? -1.0f : 1.0f,
+                                        mTransform & Transform::FLIP_V ? -1.0f : 1.0f, 1.0f, 1.0f));
+
+    layerSettings.geometry.positionTransform = scale * translation;
+
+    return layerSettings;
+}
+
 int32_t ReadbackHelper::GetBytesPerPixel(PixelFormat pixelFormat) {
     switch (pixelFormat) {
         case PixelFormat::RGBA_8888:
@@ -99,10 +158,29 @@ bool ReadbackHelper::readbackSupported(const PixelFormat& pixelFormat, const Dat
     if (pixelFormat != PixelFormat::RGB_888 && pixelFormat != PixelFormat::RGBA_8888) {
         return false;
     }
-    if (dataspace != Dataspace::V0_SRGB) {
+    if (std::find(dataspaces.begin(), dataspaces.end(), dataspace) == dataspaces.end()) {
         return false;
     }
     return true;
+}
+
+void ReadbackHelper::compareColorBuffers(std::vector<IComposerClient::Color>& expectedColors,
+                                         void* bufferData, const uint32_t stride,
+                                         const uint32_t width, const uint32_t height,
+                                         const PixelFormat pixelFormat) {
+    const int32_t bytesPerPixel = ReadbackHelper::GetBytesPerPixel(pixelFormat);
+    ASSERT_NE(-1, bytesPerPixel);
+    for (int row = 0; row < height; row++) {
+        for (int col = 0; col < width; col++) {
+            int pixel = row * width + col;
+            int offset = (row * stride + col) * bytesPerPixel;
+            uint8_t* pixelColor = (uint8_t*)bufferData + offset;
+
+            ASSERT_EQ(expectedColors[pixel].r, pixelColor[0]);
+            ASSERT_EQ(expectedColors[pixel].g, pixelColor[1]);
+            ASSERT_EQ(expectedColors[pixel].b, pixelColor[2]);
+        }
+    }
 }
 
 ReadbackBuffer::ReadbackBuffer(Display display, const std::shared_ptr<ComposerClient>& client,
@@ -153,19 +231,8 @@ void ReadbackBuffer::checkReadbackBuffer(std::vector<IComposerClient::Color> exp
 
     void* bufData = mGralloc->lock(mBufferHandle, mUsage, mAccessRegion, fenceHandle);
     ASSERT_TRUE(mPixelFormat == PixelFormat::RGB_888 || mPixelFormat == PixelFormat::RGBA_8888);
-    int32_t bytesPerPixel = ReadbackHelper::GetBytesPerPixel(mPixelFormat);
-    ASSERT_NE(-1, bytesPerPixel);
-    for (int row = 0; row < mHeight; row++) {
-        for (int col = 0; col < mWidth; col++) {
-            int pixel = row * mWidth + col;
-            int offset = (row * mStride + col) * bytesPerPixel;
-            uint8_t* pixelColor = (uint8_t*)bufData + offset;
-
-            ASSERT_EQ(expectedColors[pixel].r, pixelColor[0]);
-            ASSERT_EQ(expectedColors[pixel].g, pixelColor[1]);
-            ASSERT_EQ(expectedColors[pixel].b, pixelColor[2]);
-        }
-    }
+    ReadbackHelper::compareColorBuffers(expectedColors, bufData, mStride, mWidth, mHeight,
+                                        mPixelFormat);
     int32_t unlockFence = mGralloc->unlock(mBufferHandle);
     if (unlockFence != -1) {
         sync_wait(unlockFence, -1);
@@ -177,6 +244,16 @@ void TestColorLayer::write(const std::shared_ptr<CommandWriterBase>& writer) {
     TestLayer::write(writer);
     writer->setLayerCompositionType(IComposerClient::Composition::SOLID_COLOR);
     writer->setLayerColor(mColor);
+}
+
+LayerSettings TestColorLayer::toRenderEngineLayerSettings() {
+    LayerSettings layerSettings = TestLayer::toRenderEngineLayerSettings();
+
+    layerSettings.source.solidColor =
+            half3(static_cast<half>(mColor.r) / 255.0, static_cast<half>(mColor.g) / 255.0,
+                  static_cast<half>(mColor.b) / 255.0);
+    layerSettings.alpha = mAlpha * (static_cast<half>(mColor.a) / 255.0);
+    return layerSettings;
 }
 
 TestBufferLayer::TestBufferLayer(const std::shared_ptr<ComposerClient>& client,
@@ -210,9 +287,29 @@ TestBufferLayer::~TestBufferLayer() {
 void TestBufferLayer::write(const std::shared_ptr<CommandWriterBase>& writer) {
     TestLayer::write(writer);
     writer->setLayerCompositionType(mComposition);
-    writer->setLayerDataspace(Dataspace::UNKNOWN);
     writer->setLayerVisibleRegion(std::vector<IComposerClient::Rect>(1, mDisplayFrame));
     if (mBufferHandle != nullptr) writer->setLayerBuffer(0, mBufferHandle, mFillFence);
+}
+
+LayerSettings TestBufferLayer::toRenderEngineLayerSettings() {
+    LayerSettings layerSettings = TestLayer::toRenderEngineLayerSettings();
+    layerSettings.source.buffer.buffer =
+            new GraphicBuffer(mBufferHandle, GraphicBuffer::CLONE_HANDLE, mWidth, mHeight,
+                              static_cast<int32_t>(mFormat), 1, mUsage, mStride);
+
+    layerSettings.source.buffer.usePremultipliedAlpha =
+            mBlendMode == IComposerClient::BlendMode::PREMULTIPLIED;
+
+    const float scaleX = (mSourceCrop.right - mSourceCrop.left) / (mWidth);
+    const float scaleY = (mSourceCrop.bottom - mSourceCrop.top) / (mHeight);
+    const float translateX = mSourceCrop.left / (mWidth);
+    const float translateY = mSourceCrop.top / (mHeight);
+
+    layerSettings.source.buffer.textureTransform =
+            mat4::translate(vec4(translateX, translateY, 0, 1)) *
+            mat4::scale(vec4(scaleX, scaleY, 1.0, 1.0));
+
+    return layerSettings;
 }
 
 void TestBufferLayer::fillBuffer(std::vector<IComposerClient::Color> expectedColors) {
@@ -225,6 +322,7 @@ void TestBufferLayer::fillBuffer(std::vector<IComposerClient::Color> expectedCol
         close(mFillFence);
     }
 }
+
 void TestBufferLayer::setBuffer(std::vector<IComposerClient::Color> colors) {
     if (mBufferHandle != nullptr) {
         mGralloc->freeBuffer(mBufferHandle);
@@ -236,6 +334,12 @@ void TestBufferLayer::setBuffer(std::vector<IComposerClient::Color> colors) {
     ASSERT_NO_FATAL_FAILURE(fillBuffer(colors));
     ASSERT_NE(false, mGralloc->validateBufferSize(mBufferHandle, mWidth, mHeight, mLayerCount,
                                                   mFormat, mUsage, mStride));
+}
+
+void TestBufferLayer::setDataspace(Dataspace dataspace,
+                                   const std::shared_ptr<CommandWriterBase>& writer) {
+    writer->selectLayer(mLayer);
+    writer->setLayerDataspace(dataspace);
 }
 
 void TestBufferLayer::setToClientComposition(const std::shared_ptr<CommandWriterBase>& writer) {

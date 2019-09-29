@@ -45,7 +45,7 @@ const bool kLazyService = false;
 
 int main() {
     #ifdef ARCH_ARM_32
-        android::hardware::ProcessState::initWithMmapSize((size_t)16384);
+        android::hardware::ProcessState::initWithMmapSize((size_t)32768);
     #endif
     configureRpcThreadpool(8, true /* callerWillJoin */);
 
@@ -53,8 +53,8 @@ int main() {
     android::sp<IMediaCasService> service = new MediaCasService();
     android::status_t status;
     if (kLazyService) {
-        auto serviceRegistrar = std::make_shared<LazyServiceRegistrar>();
-        status = serviceRegistrar->registerService(service);
+        auto serviceRegistrar = LazyServiceRegistrar::getInstance();
+        status = serviceRegistrar.registerService(service);
     } else {
         status = service->registerAsService();
     }
