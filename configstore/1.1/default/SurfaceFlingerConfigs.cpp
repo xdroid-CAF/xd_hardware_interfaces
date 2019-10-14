@@ -16,11 +16,8 @@
 
 #include "SurfaceFlingerConfigs.h"
 
-#include <vendor/display/config/1.7/IDisplayConfig.h>
 #include <android/hardware/configstore/1.1/types.h>
-#include <cutils/properties.h>
 #include <log/log.h>
-#include <string>
 
 namespace android {
 namespace hardware {
@@ -71,19 +68,16 @@ Return<void> SurfaceFlingerConfigs::hasWideColorDisplay(hasWideColorDisplay_cb _
 #ifdef HAS_WIDE_COLOR_DISPLAY
     value = true;
 #endif
-    using vendor::display::config::V1_7::IDisplayConfig;
-    android::sp<IDisplayConfig> disp_config_v1_7 = IDisplayConfig::getService();
-    if (disp_config_v1_7 != NULL) {
-        value = disp_config_v1_7->isWCGSupported(0);
-    }
     _hidl_cb({true, value});
     return Void();
 }
 
 Return<void> SurfaceFlingerConfigs::hasSyncFramework(hasSyncFramework_cb _hidl_cb) {
-    char value[PROPERTY_VALUE_MAX] = {};
-    property_get("debug.sf.has_sync_framework", value, "true");
-    _hidl_cb({true, std::string(value) == "true"});
+    bool value = true;
+#ifdef RUNNING_WITHOUT_SYNC_FRAMEWORK
+    value = false;
+#endif
+    _hidl_cb({true, value});
     return Void();
 }
 
@@ -92,11 +86,6 @@ Return<void> SurfaceFlingerConfigs::hasHDRDisplay(hasHDRDisplay_cb _hidl_cb) {
 #ifdef HAS_HDR_DISPLAY
     value = true;
 #endif
-    using vendor::display::config::V1_7::IDisplayConfig;
-    android::sp<IDisplayConfig> disp_config_v1_7 = IDisplayConfig::getService();
-    if (disp_config_v1_7 != NULL) {
-        value = disp_config_v1_7->isHDRSupported(0);
-    }
     _hidl_cb({true, value});
     return Void();
 }
