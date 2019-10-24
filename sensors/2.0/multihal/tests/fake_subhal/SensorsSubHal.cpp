@@ -158,6 +158,7 @@ Return<void> SensorsSubHal::debug(const hidl_handle& fd, const hidl_vec<hidl_str
 
 Return<Result> SensorsSubHal::initialize(const sp<IHalProxyCallback>& halProxyCallback) {
     mCallback = halProxyCallback;
+    setOperationMode(OperationMode::NORMAL);
     return Result::OK;
 }
 
@@ -219,6 +220,16 @@ Return<void> DoesNotSupportDirectChannelSensorsSubHal::getSensorsList(getSensors
     }
     _hidl_cb(sensors);
     return Void();
+}
+
+void AddAndRemoveDynamicSensorsSubHal::addDynamicSensors(
+        const std::vector<SensorInfo>& sensorsAdded) {
+    mCallback->onDynamicSensorsConnected(sensorsAdded);
+}
+
+void AddAndRemoveDynamicSensorsSubHal::removeDynamicSensors(
+        const std::vector<int32_t>& sensorHandlesRemoved) {
+    mCallback->onDynamicSensorsDisconnected(sensorHandlesRemoved);
 }
 
 }  // namespace implementation
