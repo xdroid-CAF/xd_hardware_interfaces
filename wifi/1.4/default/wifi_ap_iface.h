@@ -18,9 +18,8 @@
 #define WIFI_AP_IFACE_H_
 
 #include <android-base/macros.h>
-#include <android/hardware/wifi/1.0/IWifiApIface.h>
+#include <android/hardware/wifi/1.4/IWifiApIface.h>
 
-#include "wifi_feature_flags.h"
 #include "wifi_iface_util.h"
 #include "wifi_legacy_hal.h"
 
@@ -34,13 +33,11 @@ using namespace android::hardware::wifi::V1_0;
 /**
  * HIDL interface object used to control a AP Iface instance.
  */
-class WifiApIface : public V1_0::IWifiApIface {
+class WifiApIface : public V1_4::IWifiApIface {
    public:
-    WifiApIface(
-        const std::string& ifname,
-        const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
-        const std::weak_ptr<iface_util::WifiIfaceUtil> iface_util,
-        const std::weak_ptr<feature_flags::WifiFeatureFlags> feature_flags);
+    WifiApIface(const std::string& ifname,
+                const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
+                const std::weak_ptr<iface_util::WifiIfaceUtil> iface_util);
     // Refer to |WifiChip::invalidate()|.
     void invalidate();
     bool isValid();
@@ -53,6 +50,10 @@ class WifiApIface : public V1_0::IWifiApIface {
                                 setCountryCode_cb hidl_status_cb) override;
     Return<void> getValidFrequenciesForBand(
         WifiBand band, getValidFrequenciesForBand_cb hidl_status_cb) override;
+    Return<void> setMacAddress(const hidl_array<uint8_t, 6>& mac,
+                               setMacAddress_cb hidl_status_cb) override;
+    Return<void> getFactoryMacAddress(
+        getFactoryMacAddress_cb hidl_status_cb) override;
 
    private:
     // Corresponding worker functions for the HIDL methods.
@@ -61,11 +62,13 @@ class WifiApIface : public V1_0::IWifiApIface {
     WifiStatus setCountryCodeInternal(const std::array<int8_t, 2>& code);
     std::pair<WifiStatus, std::vector<WifiChannelInMhz>>
     getValidFrequenciesForBandInternal(WifiBand band);
+    WifiStatus setMacAddressInternal(const std::array<uint8_t, 6>& mac);
+    std::pair<WifiStatus, std::array<uint8_t, 6>>
+    getFactoryMacAddressInternal();
 
     std::string ifname_;
     std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal_;
     std::weak_ptr<iface_util::WifiIfaceUtil> iface_util_;
-    std::weak_ptr<feature_flags::WifiFeatureFlags> feature_flags_;
     bool is_valid_;
 
     DISALLOW_COPY_AND_ASSIGN(WifiApIface);

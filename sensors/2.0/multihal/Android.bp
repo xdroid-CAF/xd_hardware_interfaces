@@ -21,14 +21,15 @@ cc_defaults {
     shared_libs: [
         "android.hardware.sensors@1.0",
         "android.hardware.sensors@2.0",
+        "libbase",
         "libcutils",
         "libfmq",
         "libhidlbase",
-        "libhidltransport",
         "liblog",
         "libpower",
         "libutils",
     ],
+    cflags: ["-DLOG_TAG=\"SensorsMultiHal\""],
 }
 
 cc_binary {
@@ -42,10 +43,10 @@ cc_binary {
     srcs: [
         "service.cpp",
         "HalProxy.cpp",
+        "ScopedWakelock.cpp",
     ],
     init_rc: ["android.hardware.sensors@2.0-service-multihal.rc"],
     vintf_fragments: ["android.hardware.sensors@2.0-multihal.xml"],
-    cflags: ["-DLOG_TAG=\"SensorsMultiHal\""],
 }
 
 cc_library_headers {
@@ -61,8 +62,12 @@ cc_test_library {
     vendor_available: true,
     srcs: [
         "HalProxy.cpp",
+        "ScopedWakelock.cpp",
     ],
     export_header_lib_headers: [
         "android.hardware.sensors@2.0-multihal.header",
+    ],
+    shared_libs: [
+        "libutils",
     ],
 }
