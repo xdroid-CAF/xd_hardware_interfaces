@@ -14,13 +14,9 @@
  * limitations under the License.
  */
 
-#include <VtsHalHidlTargetTestBase.h>
-#include <android-base/logging.h>
+package android.hardware.vibrator;
 
-#include "hostapd_hidl_test_utils.h"
-#include "hostapd_hidl_test_utils_1_1.h"
-
-using ::android::sp;
-using ::android::hardware::wifi::hostapd::V1_1::IHostapd;
-
-sp<IHostapd> getHostapd_1_1() { return IHostapd::castFrom(getHostapd()); }
+@VintfStability
+interface IVibratorCallback {
+    oneway void onComplete();
+}

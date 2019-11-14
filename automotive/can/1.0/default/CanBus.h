@@ -34,22 +34,36 @@ namespace V1_0 {
 namespace implementation {
 
 struct CanBus : public ICanBus {
+    using ErrorCallback = std::function<void()>;
+
     virtual ~CanBus();
 
     Return<Result> send(const CanMessage& message) override;
     Return<void> listen(const hidl_vec<CanMessageFilter>& filter,
                         const sp<ICanMessageListener>& listener, listen_cb _hidl_cb) override;
+    Return<sp<ICloseHandle>> listenForErrors(const sp<ICanErrorListener>& listener) override;
 
+    void setErrorCallback(ErrorCallback errcb);
     ICanController::Result up();
     bool down();
 
   protected:
+    /**
+     * Blank constructor, since some interface types (such as SLCAN) don't get a name until after
+     * being initialized.
+     *
+     * If using this constructor, you MUST initialize mIfname prior to the completion of preUp().
+     */
+    CanBus();
+
     CanBus(const std::string& ifname);
 
     /**
      * Prepare the SocketCAN interface.
      *
      * After calling this method, mIfname network interface is available and ready to be brought up.
+     *
+     * \return OK on success, or an error state on failure. See ICanController::Result
      */
     virtual ICanController::Result preUp();
 
@@ -57,28 +71,35 @@ struct CanBus : public ICanBus {
      * Cleanup after bringing the interface down.
      *
      * This is a counterpart to preUp().
+     *
+     * \return true upon success and false upon failure
      */
     virtual bool postDown();
 
     /** Network interface name. */
-    const std::string mIfname;
+    std::string mIfname;
 
   private:
     struct CanMessageListener {
         sp<ICanMessageListener> callback;
         hidl_vec<CanMessageFilter> filter;
         wp<ICloseHandle> closeHandle;
+        bool failedOnce = false;
     };
-    void clearListeners();
+    void clearMsgListeners();
+    void clearErrListeners();
 
     void onRead(const struct canfd_frame& frame, std::chrono::nanoseconds timestamp);
-    void onError();
+    void onError(int errnoVal);
 
-    std::mutex mListenersGuard;
-    std::vector<CanMessageListener> mListeners GUARDED_BY(mListenersGuard);
+    std::mutex mMsgListenersGuard;
+    std::vector<CanMessageListener> mMsgListeners GUARDED_BY(mMsgListenersGuard);
+
+    std::mutex mErrListenersGuard;
+    std::vector<sp<ICanErrorListener>> mErrListeners GUARDED_BY(mErrListenersGuard);
 
     std::unique_ptr<CanSocket> mSocket;
-    bool mWasUpInitially;
+    bool mDownAfterUse;
 
     /**
      * Guard for up flag is required to be held for entire time when the interface is being used
@@ -87,6 +108,8 @@ struct CanBus : public ICanBus {
      */
     std::mutex mIsUpGuard;
     bool mIsUp GUARDED_BY(mIsUpGuard) = false;
+
+    ErrorCallback mErrCb;
 };
 
 }  // namespace implementation
