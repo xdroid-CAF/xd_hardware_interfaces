@@ -1310,6 +1310,8 @@ WifiStatus WifiChip::registerDebugRingBufferCallback() {
                 LOG(ERROR) << "Error converting ring buffer status";
                 return;
             }
+            {
+            std::unique_lock<std::mutex> lk(shared_ptr_this->lock_t);
             const auto& target = shared_ptr_this->ringbuffer_map_.find(name);
             if (target != shared_ptr_this->ringbuffer_map_.end()) {
                 Ringbuffer& cur_buffer = target->second;
@@ -1317,6 +1319,7 @@ WifiStatus WifiChip::registerDebugRingBufferCallback() {
             } else {
                 LOG(ERROR) << "Ringname " << name << " not found";
                 return;
+            }
             }
         };
     legacy_hal::wifi_error legacy_status =
@@ -1591,6 +1594,8 @@ bool WifiChip::writeRingbufferFilesInternal() {
         return false;
     }
     // write ringbuffers to file
+    {
+    std::unique_lock<std::mutex> lk(lock_t);
     for (const auto& item : ringbuffer_map_) {
         const Ringbuffer& cur_buffer = item.second;
         if (cur_buffer.getData().empty()) {
@@ -1610,6 +1615,7 @@ bool WifiChip::writeRingbufferFilesInternal() {
                 PLOG(ERROR) << "Error writing to file";
             }
         }
+    }
     }
     return true;
 }
