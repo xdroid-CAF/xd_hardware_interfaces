@@ -17,6 +17,7 @@
 #include "CanController.h"
 
 #include "CanBusNative.h"
+#include "CanBusSlcan.h"
 #include "CanBusVirtual.h"
 
 #include <android-base/logging.h>
@@ -34,10 +35,8 @@ namespace implementation {
 using IfaceIdDisc = ICanController::BusConfiguration::InterfaceIdentifier::hidl_discriminator;
 
 Return<void> CanController::getSupportedInterfaceTypes(getSupportedInterfaceTypes_cb _hidl_cb) {
-    _hidl_cb({
-            ICanController::InterfaceType::VIRTUAL,
-            ICanController::InterfaceType::SOCKETCAN,
-    });
+    _hidl_cb({ICanController::InterfaceType::VIRTUAL, ICanController::InterfaceType::SOCKETCAN,
+              ICanController::InterfaceType::SLCAN});
     return {};
 }
 
@@ -77,9 +76,17 @@ Return<ICanController::Result> CanController::upInterface(
         } else {
             return ICanController::Result::BAD_ADDRESS;
         }
+    } else if (config.iftype == ICanController::InterfaceType::SLCAN) {
+        if (config.interfaceId.getDiscriminator() == IfaceIdDisc::address) {
+            busService = new CanBusSlcan(config.interfaceId.address(), config.baudrate);
+        } else {
+            return ICanController::Result::BAD_ADDRESS;
+        }
     } else {
         return ICanController::Result::NOT_SUPPORTED;
     }
+
+    busService->setErrorCallback([this, name = config.name]() { downInterface(name); });
 
     const auto result = busService->up();
     if (result != ICanController::Result::OK) return result;
@@ -97,6 +104,14 @@ Return<ICanController::Result> CanController::upInterface(
     return ICanController::Result::OK;
 }
 
+static bool unregisterCanBusService(const hidl_string& name, sp<CanBus> busService) {
+    auto manager = hidl::manager::V1_2::IServiceManager::getService();
+    if (!manager) return false;
+    const auto res = manager->tryUnregister(ICanBus::descriptor, name, busService);
+    if (!res.isOk()) return false;
+    return res;
+}
+
 Return<bool> CanController::downInterface(const hidl_string& name) {
     LOG(VERBOSE) << "Attempting to bring interface down: " << name;
 
@@ -110,8 +125,7 @@ Return<bool> CanController::downInterface(const hidl_string& name) {
 
     auto success = true;
 
-    auto manager = hidl::manager::V1_2::IServiceManager::getService();
-    if (!manager || !manager->tryUnregister(ICanBus::descriptor, name, busEntry.mapped())) {
+    if (!unregisterCanBusService(name, busEntry.mapped())) {
         LOG(ERROR) << "Couldn't unregister " << name;
         // don't return yet, let's try to do best-effort cleanup
         success = false;

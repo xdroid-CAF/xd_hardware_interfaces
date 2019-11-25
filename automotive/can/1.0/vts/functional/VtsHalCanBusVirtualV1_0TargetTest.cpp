@@ -50,15 +50,10 @@ struct CanMessageListener : public can::V1_0::ICanMessageListener {
 
     CanMessageListener() {}
 
-    virtual Return<void> onReceive(const can::V1_0::CanMessage& msg) {
+    virtual Return<void> onReceive(const can::V1_0::CanMessage& msg) override {
         std::unique_lock<std::mutex> lk(mMessagesGuard);
         mMessages.push_back(msg);
         mMessagesUpdated.notify_one();
-        return {};
-    }
-
-    virtual Return<void> onError(can::V1_0::ErrorEvent event) {
-        EXPECT_TRUE(false) << "Got error: " << event;
         return {};
     }
 
@@ -96,8 +91,7 @@ struct Bus {
         EXPECT_EQ(ICanController::Result::OK, result);
 
         /* Not using ICanBus::getService here, since it ignores interfaces not in the manifest
-         * file -- this is a test, so we don't want to add dummy services to a device manifest.
-         */
+         * file -- this is a test, so we don't want to add dummy services to a device manifest. */
         auto manager = hidl::manager::V1_2::IServiceManager::getService();
         auto service = manager->get(ICanBus::descriptor, config.name);
         mBus = ICanBus::castFrom(service);
