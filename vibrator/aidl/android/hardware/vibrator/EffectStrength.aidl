@@ -14,17 +14,12 @@
  * limitations under the License.
  */
 
-#ifndef HOSTAPD_HIDL_TEST_UTILS_1_1_H
-#define HOSTAPD_HIDL_TEST_UTILS_1_1_H
+package android.hardware.vibrator;
 
-#include <android/hardware/wifi/hostapd/1.1/IHostapd.h>
-
-#include <VtsHalHidlTargetTestEnvBase.h>
-
-// Helper functions to obtain references to the various HIDL interface objects.
-// Note: We only have a single instance of each of these objects currently.
-// These helper functions should be modified to return vectors if we support
-// multiple instances.
-android::sp<android::hardware::wifi::hostapd::V1_1::IHostapd> getHostapd_1_1();
-
-#endif /* HOSTAPD_HIDL_TEST_UTILS_1_1_H */
+@VintfStability
+@Backing(type="byte")
+enum EffectStrength {
+    LIGHT,
+    MEDIUM,
+    STRONG,
+}

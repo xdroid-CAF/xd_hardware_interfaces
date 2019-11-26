@@ -27,13 +27,16 @@ namespace can {
 /**
  * Opens and binds SocketCAN socket.
  *
- * @param ifname Interface to open a socket against
- * @return Socket's FD or -1 in case of failure
+ * \param ifname Interface to open a socket against
+ * \return Socket's FD or -1 in case of failure
  */
 base::unique_fd socket(const std::string& ifname);
 
 /**
  * Sets CAN interface bitrate.
+ *
+ * \param ifname Interface for which the bitrate is to be set
+ * \return true on success, false on failure
  */
 bool setBitrate(std::string ifname, uint32_t bitrate);
 
