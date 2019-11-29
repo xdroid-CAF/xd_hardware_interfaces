@@ -97,7 +97,7 @@ protected:
 
     hidl_vec<VendorTagSection> mVendorTagSections;
     bool setUpVendorTags();
-    int checkCameraVersion(int id, camera_info info);
+    int checkCameraVersion(int id, uint32_t device_version);
 
     // create HIDL device name from camera ID and legacy device version
     std::string getHidlDeviceName(std::string cameraId, int deviceVersion);
