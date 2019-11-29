@@ -87,23 +87,32 @@ void LegacyCameraProviderImpl_2_4::addDeviceNames(int camera_id, CameraDeviceSta
     if (deviceVersion >= CAMERA_DEVICE_API_VERSION_3_2 &&
             mModule->isOpenLegacyDefined()) {
         // try open_legacy to see if it actually works
-        struct hw_device_t* halDev = nullptr;
-        int ret = mModule->openLegacy(cameraId, CAMERA_DEVICE_API_VERSION_1_0, &halDev);
-        if (ret == 0) {
-            mOpenLegacySupported[cameraIdStr] = true;
-            halDev->close(halDev);
-            deviceNamePair = std::make_pair(cameraIdStr,
+        if ((property_get_bool("ro.config.low_ram", /*default*/ true))) {
+           deviceNamePair = std::make_pair(cameraIdStr,
                             getHidlDeviceName(cameraIdStr, CAMERA_DEVICE_API_VERSION_1_0));
-            mCameraDeviceNames.add(deviceNamePair);
-            if (cam_new) {
-                mCallbacks->cameraDeviceStatusChange(deviceNamePair.second, status);
-            }
-        } else if (ret == -EBUSY || ret == -EUSERS) {
+           mCameraDeviceNames.add(deviceNamePair);
+           if (cam_new) {
+              mCallbacks->cameraDeviceStatusChange(deviceNamePair.second, status);
+           }
+          } else {
+            struct hw_device_t* halDev = nullptr;
+            int ret = mModule->openLegacy(cameraId, CAMERA_DEVICE_API_VERSION_1_0, &halDev);
+            if (ret == 0) {
+               mOpenLegacySupported[cameraIdStr] = true;
+               halDev->close(halDev);
+               deviceNamePair = std::make_pair(cameraIdStr,
+                                getHidlDeviceName(cameraIdStr, CAMERA_DEVICE_API_VERSION_1_0));
+               mCameraDeviceNames.add(deviceNamePair);
+               if (cam_new) {
+                 mCallbacks->cameraDeviceStatusChange(deviceNamePair.second, status);
+              }
+            } else if (ret == -EBUSY || ret == -EUSERS) {
             // Looks like this provider instance is not initialized during
             // system startup and there are other camera users already.
             // Not a good sign but not fatal.
-            ALOGW("%s: open_legacy try failed!", __FUNCTION__);
-        }
+              ALOGW("%s: open_legacy try failed!", __FUNCTION__);
+            }
+         }
     }
 }
 
