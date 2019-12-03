@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <gralloctypes/Gralloc4.h>
 #include <mapper-vts/4.0/MapperVts.h>
 
 #include <VtsHalHidlTargetTestBase.h>
@@ -92,28 +93,39 @@ const native_handle_t* Gralloc::cloneBuffer(const hidl_handle& rawHandle) {
 
 std::vector<const native_handle_t*> Gralloc::allocate(const BufferDescriptor& descriptor,
                                                       uint32_t count, bool import,
-                                                      uint32_t* outStride) {
+                                                      bool allowFailure, uint32_t* outStride) {
     std::vector<const native_handle_t*> bufferHandles;
     bufferHandles.reserve(count);
-    mAllocator->allocate(descriptor, count,
-                         [&](const auto& tmpError, const auto& tmpStride, const auto& tmpBuffers) {
-                             ASSERT_EQ(Error::NONE, tmpError) << "failed to allocate buffers";
-                             ASSERT_EQ(count, tmpBuffers.size()) << "invalid buffer array";
+    mAllocator->allocate(
+            descriptor, count,
+            [&](const auto& tmpError, const auto& tmpStride, const auto& tmpBuffers) {
+                ASSERT_EQ(Error::NONE, tmpError) << "failed to allocate buffers";
+                ASSERT_EQ(count, tmpBuffers.size()) << "invalid buffer array";
 
-                             for (uint32_t i = 0; i < count; i++) {
-                                 if (import) {
-                                     ASSERT_NO_FATAL_FAILURE(
-                                             bufferHandles.push_back(importBuffer(tmpBuffers[i])));
-                                 } else {
-                                     ASSERT_NO_FATAL_FAILURE(
-                                             bufferHandles.push_back(cloneBuffer(tmpBuffers[i])));
-                                 }
-                             }
+                for (uint32_t i = 0; i < count; i++) {
+                    const native_handle_t* bufferHandle = nullptr;
+                    if (import) {
+                        if (allowFailure) {
+                            bufferHandle = importBuffer(tmpBuffers[i]);
+                        } else {
+                            ASSERT_NO_FATAL_FAILURE(bufferHandle = importBuffer(tmpBuffers[i]));
+                        }
+                    } else {
+                        if (allowFailure) {
+                            bufferHandle = cloneBuffer(tmpBuffers[i]);
+                        } else {
+                            ASSERT_NO_FATAL_FAILURE(bufferHandle = cloneBuffer(tmpBuffers[i]));
+                        }
+                    }
+                    if (bufferHandle) {
+                        bufferHandles.push_back(bufferHandle);
+                    }
+                }
 
-                             if (outStride) {
-                                 *outStride = tmpStride;
-                             }
-                         });
+                if (outStride) {
+                    *outStride = tmpStride;
+                }
+            });
 
     if (::testing::Test::HasFatalFailure()) {
         bufferHandles.clear();
@@ -123,17 +135,20 @@ std::vector<const native_handle_t*> Gralloc::allocate(const BufferDescriptor& de
 }
 
 const native_handle_t* Gralloc::allocate(const IMapper::BufferDescriptorInfo& descriptorInfo,
-                                         bool import, uint32_t* outStride) {
+                                         bool import, bool allowFailure, uint32_t* outStride) {
     BufferDescriptor descriptor = createDescriptor(descriptorInfo);
     if (::testing::Test::HasFatalFailure()) {
         return nullptr;
     }
 
-    auto buffers = allocate(descriptor, 1, import, outStride);
+    auto buffers = allocate(descriptor, 1, import, allowFailure, outStride);
     if (::testing::Test::HasFatalFailure()) {
         return nullptr;
     }
 
+    if (buffers.size() != 1) {
+        return nullptr;
+    }
     return buffers[0];
 }
 
@@ -167,6 +182,10 @@ const native_handle_t* Gralloc::importBuffer(const hidl_handle& rawHandle) {
 }
 
 void Gralloc::freeBuffer(const native_handle_t* bufferHandle) {
+    if (bufferHandle == nullptr) {
+        return;
+    }
+
     auto buffer = const_cast<native_handle_t*>(bufferHandle);
 
     if (mImportedBuffers.erase(bufferHandle)) {
@@ -180,8 +199,7 @@ void Gralloc::freeBuffer(const native_handle_t* bufferHandle) {
 }
 
 void* Gralloc::lock(const native_handle_t* bufferHandle, uint64_t cpuUsage,
-                    const IMapper::Rect& accessRegion, int acquireFence, int32_t* outBytesPerPixel,
-                    int32_t* outBytesPerStride) {
+                    const IMapper::Rect& accessRegion, int acquireFence) {
     auto buffer = const_cast<native_handle_t*>(bufferHandle);
 
     NATIVE_HANDLE_DECLARE_STORAGE(acquireFenceStorage, 1, 0);
@@ -192,17 +210,11 @@ void* Gralloc::lock(const native_handle_t* bufferHandle, uint64_t cpuUsage,
         acquireFenceHandle = h;
     }
 
-    *outBytesPerPixel = -1;
-    *outBytesPerStride = -1;
-
     void* data = nullptr;
     mMapper->lock(buffer, cpuUsage, accessRegion, acquireFenceHandle,
-                  [&](const auto& tmpError, const auto& tmpData, int32_t tmpBytesPerPixel,
-                      int32_t tmpBytesPerStride) {
+                  [&](const auto& tmpError, const auto& tmpData) {
                       ASSERT_EQ(Error::NONE, tmpError) << "failed to lock buffer " << buffer;
                       data = tmpData;
-                      *outBytesPerPixel = tmpBytesPerPixel;
-                      *outBytesPerStride = tmpBytesPerStride;
                   });
 
     if (acquireFence >= 0) {
@@ -210,33 +222,6 @@ void* Gralloc::lock(const native_handle_t* bufferHandle, uint64_t cpuUsage,
     }
 
     return data;
-}
-
-YCbCrLayout Gralloc::lockYCbCr(const native_handle_t* bufferHandle, uint64_t cpuUsage,
-                               const IMapper::Rect& accessRegion, int acquireFence) {
-    auto buffer = const_cast<native_handle_t*>(bufferHandle);
-
-    NATIVE_HANDLE_DECLARE_STORAGE(acquireFenceStorage, 1, 0);
-    hidl_handle acquireFenceHandle;
-    if (acquireFence >= 0) {
-        auto h = native_handle_init(acquireFenceStorage, 1, 0);
-        h->data[0] = acquireFence;
-        acquireFenceHandle = h;
-    }
-
-    YCbCrLayout layout = {};
-    mMapper->lockYCbCr(buffer, cpuUsage, accessRegion, acquireFenceHandle,
-                       [&](const auto& tmpError, const auto& tmpLayout) {
-                           ASSERT_EQ(Error::NONE, tmpError)
-                                   << "failed to lockYCbCr buffer " << buffer;
-                           layout = tmpLayout;
-                       });
-
-    if (acquireFence >= 0) {
-        close(acquireFence);
-    }
-
-    return layout;
 }
 
 int Gralloc::unlock(const native_handle_t* bufferHandle) {
@@ -294,6 +279,35 @@ bool Gralloc::isSupported(const IMapper::BufferDescriptorInfo& descriptorInfo) {
         supported = tmpSupported;
     });
     return supported;
+}
+
+Error Gralloc::get(const native_handle_t* bufferHandle, const IMapper::MetadataType& metadataType,
+                   hidl_vec<uint8_t>* outVec) {
+    Error err;
+    mMapper->get(const_cast<native_handle_t*>(bufferHandle), metadataType,
+                 [&](const auto& tmpError, const hidl_vec<uint8_t>& tmpVec) {
+                     err = tmpError;
+                     *outVec = tmpVec;
+                 });
+    return err;
+}
+
+Error Gralloc::set(const native_handle_t* bufferHandle, const IMapper::MetadataType& metadataType,
+                   const hidl_vec<uint8_t>& vec) {
+    return mMapper->set(const_cast<native_handle_t*>(bufferHandle), metadataType, vec);
+}
+
+Error Gralloc::getFromBufferDescriptorInfo(const IMapper::BufferDescriptorInfo& descriptorInfo,
+                                           const IMapper::MetadataType& metadataType,
+                                           hidl_vec<uint8_t>* outVec) {
+    Error err;
+    mMapper->getFromBufferDescriptorInfo(
+            descriptorInfo, metadataType,
+            [&](const auto& tmpError, const hidl_vec<uint8_t>& tmpVec) {
+                err = tmpError;
+                *outVec = tmpVec;
+            });
+    return err;
 }
 
 }  // namespace vts
