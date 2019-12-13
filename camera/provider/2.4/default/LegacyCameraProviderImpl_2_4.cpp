@@ -87,7 +87,7 @@ void LegacyCameraProviderImpl_2_4::addDeviceNames(int camera_id, CameraDeviceSta
     if (deviceVersion >= CAMERA_DEVICE_API_VERSION_3_2 &&
             mModule->isOpenLegacyDefined()) {
         // try open_legacy to see if it actually works
-        if ((property_get_bool("ro.config.low_ram", /*default*/ true))) {
+        if ((property_get_bool("ro.config.low_ram", /*default*/ false))) {
            deviceNamePair = std::make_pair(cameraIdStr,
                             getHidlDeviceName(cameraIdStr, CAMERA_DEVICE_API_VERSION_1_0));
            mCameraDeviceNames.add(deviceNamePair);
