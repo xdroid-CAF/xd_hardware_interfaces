@@ -1197,6 +1197,7 @@ safe_union FrontendSettings {
 /**
  *  Scan type for Frontend.
  */
+@export
 enum FrontendScanType : uint32_t {
     SCAN_UNDEFINED = 0,
     SCAN_AUTO = 1 << 0,
@@ -1206,6 +1207,7 @@ enum FrontendScanType : uint32_t {
 /**
  *  Scan Message Type for Frontend.
  */
+@export
 enum FrontendScanMessageType : uint32_t {
     /**
      * Scan locked the signal.
@@ -2230,8 +2232,6 @@ struct DemuxIpFilterSettings {
 
         DemuxFilterSectionSettings section;
 
-        DemuxFilterPesDataSettings pesData;
-
         /**
          * true if the data from IP subtype go to next filter directly
          */
@@ -2248,7 +2248,7 @@ struct DemuxTlvFilterSettings {
     /**
      * true if the filtered data is commpressed ip packet
      */
-    bool bIsCompressedIpPacket;
+    bool isCompressedIpPacket;
 
     safe_union FilterSettings {
         /**

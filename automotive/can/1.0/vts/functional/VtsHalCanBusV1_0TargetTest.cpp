@@ -24,12 +24,7 @@
 #include <gmock/gmock.h>
 #include <hidl-utils/hidl-utils.h>
 
-namespace android {
-namespace hardware {
-namespace automotive {
-namespace can {
-namespace V1_0 {
-namespace vts {
+namespace android::hardware::automotive::can::V1_0::vts {
 
 using hardware::hidl_vec;
 
@@ -123,9 +118,9 @@ TEST_F(CanBusHalTest, ListenNoFilter) {
 
 TEST_F(CanBusHalTest, ListenSomeFilter) {
     hidl_vec<CanMessageFilter> filters = {
-            {0x123, 0x1FF, false},
-            {0x001, 0x00F, true},
-            {0x200, 0x100, false},
+            {0x123, 0x1FF, false, FilterFlag::DONT_CARE, FilterFlag::DONT_CARE},
+            {0x001, 0x00F, true, FilterFlag::DONT_CARE, FilterFlag::DONT_CARE},
+            {0x200, 0x100, false, FilterFlag::DONT_CARE, FilterFlag::DONT_CARE},
     };
 
     const auto [result, closeHandle] = listen(filters, new CanMessageListener());
@@ -173,12 +168,7 @@ TEST_F(CanBusHalTest, DontCloseErrorListener) {
     ASSERT_NE(nullptr, closeHandle.get());
 }
 
-}  // namespace vts
-}  // namespace V1_0
-}  // namespace can
-}  // namespace automotive
-}  // namespace hardware
-}  // namespace android
+}  // namespace android::hardware::automotive::can::V1_0::vts
 
 /**
  * Example manual invocation:

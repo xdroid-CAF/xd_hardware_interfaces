@@ -20,6 +20,7 @@
 #include <chrono>
 #include <mutex>
 #include <regex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <condition_variable>
@@ -47,8 +48,12 @@
 #include <gui/BufferItemConsumer.h>
 #include <gui/BufferQueue.h>
 #include <gui/Surface.h>
+#include <gtest/gtest.h>
 #include <hardware/gralloc.h>
 #include <hardware/gralloc1.h>
+#include <hidl/GtestPrinter.h>
+#include <hidl/ServiceManagement.h>
+#include <log/log.h>
 #include <system/camera.h>
 #include <system/camera_metadata.h>
 #include <ui/GraphicBuffer.h>
@@ -58,9 +63,6 @@
 #include <android/hidl/allocator/1.0/IAllocator.h>
 #include <android/hidl/memory/1.0/IMapper.h>
 #include <android/hidl/memory/1.0/IMemory.h>
-
-#include <VtsHalHidlTargetTestBase.h>
-#include <VtsHalHidlTargetTestEnvBase.h>
 
 using namespace ::android::hardware::camera::device;
 using ::android::hardware::Return;
@@ -282,27 +284,6 @@ namespace {
         return;
     }
 }
-
-// Test environment for camera
-class CameraHidlEnvironment : public ::testing::VtsHalHidlTargetTestEnvBase {
-   public:
-    // get the test environment singleton
-    static CameraHidlEnvironment* Instance() {
-        static CameraHidlEnvironment* instance = new CameraHidlEnvironment;
-        return instance;
-    }
-
-    virtual void HidlSetUp() override { ALOGI("SetUp CameraHidlEnvironment"); }
-
-    virtual void HidlTearDown() override { ALOGI("TearDown CameraHidlEnvironment"); }
-
-    virtual void registerTestServices() override { registerTestService<ICameraProvider>(); }
-
-   private:
-    CameraHidlEnvironment() {}
-
-    GTEST_DISALLOW_COPY_AND_ASSIGN_(CameraHidlEnvironment);
-};
 
 struct BufferItemHander: public BufferItemConsumer::FrameAvailableListener {
     BufferItemHander(wp<BufferItemConsumer> consumer) : mConsumer(consumer) {}
@@ -544,12 +525,13 @@ Return<Status> PreviewWindowCb::setTimestamp(int64_t timestamp) {
 }
 
 // The main test class for camera HIDL HAL.
-class CameraHidlTest : public ::testing::VtsHalHidlTargetTestBase {
+class CameraHidlTest : public ::testing::TestWithParam<std::string> {
 public:
  virtual void SetUp() override {
-     string service_name = CameraHidlEnvironment::Instance()->getServiceName<ICameraProvider>();
+     std::string service_name = GetParam();
      ALOGI("get service with name: %s", service_name.c_str());
-     mProvider = ::testing::VtsHalHidlTargetTestBase::getService<ICameraProvider>(service_name);
+     mProvider = ICameraProvider::getService(service_name);
+
      ASSERT_NE(mProvider, nullptr);
 
      uint32_t id;
@@ -774,6 +756,7 @@ public:
             const hidl_vec<hidl_string>& deviceNames);
     void verifyCameraCharacteristics(Status status, const CameraMetadata& chars);
     void verifyBokehCharacteristics(const camera_metadata_t* metadata);
+    void verifyZoomCharacteristics(const camera_metadata_t* metadata);
     void verifyRecommendedConfigs(const CameraMetadata& metadata);
     void verifyMonochromeCharacteristics(const CameraMetadata& chars, int deviceVersion);
     void verifyMonochromeCameraResult(
@@ -794,6 +777,8 @@ public:
 
     void verifySessionReconfigurationQuery(sp<device::V3_5::ICameraDeviceSession> session3_5,
             camera_metadata* oldSessionParams, camera_metadata* newSessionParams);
+
+    void verifyRequestTemplate(const camera_metadata_t* metadata, RequestTemplate requestTemplate);
 
     bool isDepthOnly(camera_metadata_t* staticMeta);
 
@@ -878,7 +863,7 @@ protected:
         // return from HAL but framework.
         ::android::Vector<StreamBuffer> resultOutputBuffers;
 
-        std::unordered_set<string> expectedPhysicalResults;
+        std::unordered_set<std::string> expectedPhysicalResults;
 
         InFlightRequest() :
                 shutterTimestamp(0),
@@ -912,7 +897,7 @@ protected:
 
         InFlightRequest(ssize_t numBuffers, bool hasInput,
                 bool partialResults, uint32_t partialCount,
-                const std::unordered_set<string>& extraPhysicalResult,
+                const std::unordered_set<std::string>& extraPhysicalResult,
                 std::shared_ptr<ResultMetadataQueue> queue = nullptr) :
                 shutterTimestamp(0),
                 errorCodeValid(false),
@@ -1573,7 +1558,7 @@ hidl_vec<hidl_string> CameraHidlTest::getCameraDeviceNames(sp<ICameraProvider> p
 }
 
 // Test devices with first_api_level >= P does not advertise device@1.0
-TEST_F(CameraHidlTest, noHal1AfterP) {
+TEST_P(CameraHidlTest, noHal1AfterP) {
     constexpr int32_t HAL1_PHASE_OUT_API_LEVEL = 28;
     int32_t firstApiLevel = 0;
     getFirstApiLevel(&firstApiLevel);
@@ -1598,7 +1583,7 @@ TEST_F(CameraHidlTest, noHal1AfterP) {
 
 // Test if ICameraProvider::isTorchModeSupported returns Status::OK
 // Also if first_api_level >= Q torch API must be supported.
-TEST_F(CameraHidlTest, isTorchModeSupported) {
+TEST_P(CameraHidlTest, isTorchModeSupported) {
     constexpr int32_t API_LEVEL_Q = 29;
     int32_t firstApiLevel = 0;
     getFirstApiLevel(&firstApiLevel);
@@ -1615,7 +1600,7 @@ TEST_F(CameraHidlTest, isTorchModeSupported) {
 }
 
 // TODO: consider removing this test if getCameraDeviceNames() has the same coverage
-TEST_F(CameraHidlTest, getCameraIdList) {
+TEST_P(CameraHidlTest, getCameraIdList) {
     Return<void> ret;
     ret = mProvider->getCameraIdList([&](auto status, const auto& idList) {
         ALOGI("getCameraIdList returns status:%d", (int)status);
@@ -1628,7 +1613,7 @@ TEST_F(CameraHidlTest, getCameraIdList) {
 }
 
 // Test if ICameraProvider::getVendorTags returns Status::OK
-TEST_F(CameraHidlTest, getVendorTags) {
+TEST_P(CameraHidlTest, getVendorTags) {
     Return<void> ret;
     ret = mProvider->getVendorTags([&](auto status, const auto& vendorTagSecs) {
         ALOGI("getVendorTags returns status:%d numSections %zu", (int)status, vendorTagSecs.size());
@@ -1646,7 +1631,7 @@ TEST_F(CameraHidlTest, getVendorTags) {
 }
 
 // Test if ICameraProvider::setCallback returns Status::OK
-TEST_F(CameraHidlTest, setCallback) {
+TEST_P(CameraHidlTest, setCallback) {
     struct ProviderCb : public ICameraProviderCallback {
         virtual Return<void> cameraDeviceStatusChange(
                 const hidl_string& cameraDeviceName,
@@ -1674,7 +1659,7 @@ TEST_F(CameraHidlTest, setCallback) {
 }
 
 // Test if ICameraProvider::getCameraDeviceInterface returns Status::OK and non-null device
-TEST_F(CameraHidlTest, getCameraDeviceInterface) {
+TEST_P(CameraHidlTest, getCameraDeviceInterface) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1716,7 +1701,7 @@ TEST_F(CameraHidlTest, getCameraDeviceInterface) {
 
 // Verify that the device resource cost can be retrieved and the values are
 // sane.
-TEST_F(CameraHidlTest, getResourceCost) {
+TEST_P(CameraHidlTest, getResourceCost) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1786,7 +1771,7 @@ TEST_F(CameraHidlTest, getResourceCost) {
 
 // Verify that the static camera info can be retrieved
 // successfully.
-TEST_F(CameraHidlTest, getCameraInfo) {
+TEST_P(CameraHidlTest, getCameraInfo) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1834,7 +1819,7 @@ TEST_F(CameraHidlTest, getCameraInfo) {
 }
 
 // Check whether preview window can be configured
-TEST_F(CameraHidlTest, setPreviewWindow) {
+TEST_P(CameraHidlTest, setPreviewWindow) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1854,7 +1839,7 @@ TEST_F(CameraHidlTest, setPreviewWindow) {
 }
 
 // Verify that setting preview window fails in case device is not open
-TEST_F(CameraHidlTest, setPreviewWindowInvalid) {
+TEST_P(CameraHidlTest, setPreviewWindowInvalid) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1879,7 +1864,7 @@ TEST_F(CameraHidlTest, setPreviewWindowInvalid) {
 }
 
 // Start and stop preview checking whether it gets enabled in between.
-TEST_F(CameraHidlTest, startStopPreview) {
+TEST_P(CameraHidlTest, startStopPreview) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1904,7 +1889,7 @@ TEST_F(CameraHidlTest, startStopPreview) {
 
 // Start preview without active preview window. Preview should start as soon
 // as a valid active window gets configured.
-TEST_F(CameraHidlTest, startStopPreviewDelayed) {
+TEST_P(CameraHidlTest, startStopPreviewDelayed) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1934,7 +1919,7 @@ TEST_F(CameraHidlTest, startStopPreviewDelayed) {
 }
 
 // Verify that image capture behaves as expected along with preview callbacks.
-TEST_F(CameraHidlTest, takePicture) {
+TEST_P(CameraHidlTest, takePicture) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -1983,7 +1968,7 @@ TEST_F(CameraHidlTest, takePicture) {
 }
 
 // Image capture should fail in case preview didn't get enabled first.
-TEST_F(CameraHidlTest, takePictureFail) {
+TEST_P(CameraHidlTest, takePictureFail) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2003,7 +1988,7 @@ TEST_F(CameraHidlTest, takePictureFail) {
 }
 
 // Verify that image capture can be cancelled.
-TEST_F(CameraHidlTest, cancelPicture) {
+TEST_P(CameraHidlTest, cancelPicture) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2030,7 +2015,7 @@ TEST_F(CameraHidlTest, cancelPicture) {
 }
 
 // Image capture cancel is a no-op when image capture is not running.
-TEST_F(CameraHidlTest, cancelPictureNOP) {
+TEST_P(CameraHidlTest, cancelPictureNOP) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2053,7 +2038,7 @@ TEST_F(CameraHidlTest, cancelPictureNOP) {
 }
 
 // Test basic video recording.
-TEST_F(CameraHidlTest, startStopRecording) {
+TEST_P(CameraHidlTest, startStopRecording) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2131,7 +2116,7 @@ TEST_F(CameraHidlTest, startStopRecording) {
 }
 
 // It shouldn't be possible to start recording without enabling preview first.
-TEST_F(CameraHidlTest, startRecordingFail) {
+TEST_P(CameraHidlTest, startRecordingFail) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2155,7 +2140,7 @@ TEST_F(CameraHidlTest, startRecordingFail) {
 }
 
 // Check autofocus support if available.
-TEST_F(CameraHidlTest, autoFocus) {
+TEST_P(CameraHidlTest, autoFocus) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<const char*> focusModes = {CameraParameters::FOCUS_MODE_AUTO,
                                            CameraParameters::FOCUS_MODE_CONTINUOUS_PICTURE,
@@ -2216,7 +2201,7 @@ TEST_F(CameraHidlTest, autoFocus) {
 }
 
 // In case autofocus is supported verify that it can be cancelled.
-TEST_F(CameraHidlTest, cancelAutoFocus) {
+TEST_P(CameraHidlTest, cancelAutoFocus) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2262,7 +2247,7 @@ TEST_F(CameraHidlTest, cancelAutoFocus) {
 }
 
 // Check whether face detection is available and try to enable&disable.
-TEST_F(CameraHidlTest, sendCommandFaceDetection) {
+TEST_P(CameraHidlTest, sendCommandFaceDetection) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2317,7 +2302,7 @@ TEST_F(CameraHidlTest, sendCommandFaceDetection) {
 }
 
 // Check whether smooth zoom is available and try to enable&disable.
-TEST_F(CameraHidlTest, sendCommandSmoothZoom) {
+TEST_P(CameraHidlTest, sendCommandSmoothZoom) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2365,7 +2350,7 @@ TEST_F(CameraHidlTest, sendCommandSmoothZoom) {
 }
 
 // Basic sanity tests related to camera parameters.
-TEST_F(CameraHidlTest, getSetParameters) {
+TEST_P(CameraHidlTest, getSetParameters) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2457,7 +2442,7 @@ TEST_F(CameraHidlTest, getSetParameters) {
 
 // Verify that the static camera characteristics can be retrieved
 // successfully.
-TEST_F(CameraHidlTest, getCameraCharacteristics) {
+TEST_P(CameraHidlTest, getCameraCharacteristics) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2523,7 +2508,7 @@ TEST_F(CameraHidlTest, getCameraCharacteristics) {
 
 //In case it is supported verify that torch can be enabled.
 //Check for corresponding toch callbacks as well.
-TEST_F(CameraHidlTest, setTorchMode) {
+TEST_P(CameraHidlTest, setTorchMode) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     bool torchControlSupported = false;
     Return<void> ret;
@@ -2661,7 +2646,7 @@ TEST_F(CameraHidlTest, setTorchMode) {
 }
 
 // Check dump functionality.
-TEST_F(CameraHidlTest, dumpState) {
+TEST_P(CameraHidlTest, dumpState) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     Return<void> ret;
 
@@ -2726,7 +2711,7 @@ TEST_F(CameraHidlTest, dumpState) {
 }
 
 // Open, dumpStates, then close
-TEST_F(CameraHidlTest, openClose) {
+TEST_P(CameraHidlTest, openClose) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     Return<void> ret;
 
@@ -2819,7 +2804,7 @@ TEST_F(CameraHidlTest, openClose) {
 
 // Check whether all common default request settings can be sucessfully
 // constructed.
-TEST_F(CameraHidlTest, constructDefaultRequestSettings) {
+TEST_P(CameraHidlTest, constructDefaultRequestSettings) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -2876,13 +2861,7 @@ TEST_F(CameraHidlTest, constructDefaultRequestSettings) {
                                             metadata, &expectedSize);
                                     ASSERT_TRUE((result == 0) ||
                                             (result == CAMERA_METADATA_VALIDATION_SHIFTED));
-                                    size_t entryCount =
-                                            get_camera_metadata_entry_count(metadata);
-                                    // TODO: we can do better than 0 here. Need to check how many required
-                                    // request keys we've defined for each template
-                                    ASSERT_GT(entryCount, 0u);
-                                    ALOGI("template %u metadata entry count is %zu",
-                                          t, entryCount);
+                                    verifyRequestTemplate(metadata, reqTemplate);
                                 } else {
                                     ASSERT_EQ(0u, req.size());
                                 }
@@ -2909,7 +2888,7 @@ TEST_F(CameraHidlTest, constructDefaultRequestSettings) {
 
 // Verify that all supported stream formats and sizes can be configured
 // successfully.
-TEST_F(CameraHidlTest, configureStreamsAvailableOutputs) {
+TEST_P(CameraHidlTest, configureStreamsAvailableOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputStreams;
 
@@ -3017,7 +2996,7 @@ TEST_F(CameraHidlTest, configureStreamsAvailableOutputs) {
 }
 
 // Check for correct handling of invalid/incorrect configuration parameters.
-TEST_F(CameraHidlTest, configureStreamsInvalidOutputs) {
+TEST_P(CameraHidlTest, configureStreamsInvalidOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputStreams;
 
@@ -3213,7 +3192,7 @@ TEST_F(CameraHidlTest, configureStreamsInvalidOutputs) {
 
 // Check whether all supported ZSL output stream combinations can be
 // configured successfully.
-TEST_F(CameraHidlTest, configureStreamsZSLInputOutputs) {
+TEST_P(CameraHidlTest, configureStreamsZSLInputOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> inputStreams;
     std::vector<AvailableZSLInputOutput> inputOutputMap;
@@ -3379,7 +3358,7 @@ TEST_F(CameraHidlTest, configureStreamsZSLInputOutputs) {
 
 // Check whether session parameters are supported. If Hal support for them
 // exist, then try to configure a preview stream using them.
-TEST_F(CameraHidlTest, configureStreamsWithSessionParameters) {
+TEST_P(CameraHidlTest, configureStreamsWithSessionParameters) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputPreviewStreams;
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
@@ -3498,7 +3477,7 @@ TEST_F(CameraHidlTest, configureStreamsWithSessionParameters) {
 
 // Verify that all supported preview + still capture stream combinations
 // can be configured successfully.
-TEST_F(CameraHidlTest, configureStreamsPreviewStillOutputs) {
+TEST_P(CameraHidlTest, configureStreamsPreviewStillOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputBlobStreams;
     std::vector<AvailableStream> outputPreviewStreams;
@@ -3621,7 +3600,7 @@ TEST_F(CameraHidlTest, configureStreamsPreviewStillOutputs) {
 // In case constrained mode is supported, test whether it can be
 // configured. Additionally check for common invalid inputs when
 // using this mode.
-TEST_F(CameraHidlTest, configureStreamsConstrainedOutputs) {
+TEST_P(CameraHidlTest, configureStreamsConstrainedOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
 
     for (const auto& name : cameraDeviceNames) {
@@ -3826,7 +3805,7 @@ TEST_F(CameraHidlTest, configureStreamsConstrainedOutputs) {
 
 // Verify that all supported video + snapshot stream combinations can
 // be configured successfully.
-TEST_F(CameraHidlTest, configureStreamsVideoStillOutputs) {
+TEST_P(CameraHidlTest, configureStreamsVideoStillOutputs) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputBlobStreams;
     std::vector<AvailableStream> outputVideoStreams;
@@ -3947,7 +3926,7 @@ TEST_F(CameraHidlTest, configureStreamsVideoStillOutputs) {
 }
 
 // Generate and verify a camera capture request
-TEST_F(CameraHidlTest, processCaptureRequestPreview) {
+TEST_P(CameraHidlTest, processCaptureRequestPreview) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
                                         static_cast<int32_t>(PixelFormat::IMPLEMENTATION_DEFINED)};
@@ -4115,7 +4094,7 @@ TEST_F(CameraHidlTest, processCaptureRequestPreview) {
 }
 
 // Generate and verify a multi-camera capture request
-TEST_F(CameraHidlTest, processMultiCaptureRequestPreview) {
+TEST_P(CameraHidlTest, processMultiCaptureRequestPreview) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
                                         static_cast<int32_t>(PixelFormat::YCBCR_420_888)};
@@ -4184,7 +4163,7 @@ TEST_F(CameraHidlTest, processMultiCaptureRequestPreview) {
 
         // Leave only 2 physical devices in the id set.
         auto it = physicalIds.begin();
-        string physicalDeviceId = *it; it++;
+        std::string physicalDeviceId = *it; it++;
         physicalIds.erase(++it, physicalIds.end());
         ASSERT_EQ(physicalIds.size(), 2u);
 
@@ -4362,7 +4341,7 @@ TEST_F(CameraHidlTest, processMultiCaptureRequestPreview) {
 }
 
 // Generate and verify a burst containing alternating sensor sensitivity values
-TEST_F(CameraHidlTest, processCaptureRequestBurstISO) {
+TEST_P(CameraHidlTest, processCaptureRequestBurstISO) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
                                         static_cast<int32_t>(PixelFormat::IMPLEMENTATION_DEFINED)};
@@ -4520,7 +4499,7 @@ TEST_F(CameraHidlTest, processCaptureRequestBurstISO) {
 
 // Test whether an incorrect capture request with missing settings will
 // be reported correctly.
-TEST_F(CameraHidlTest, processCaptureRequestInvalidSinglePreview) {
+TEST_P(CameraHidlTest, processCaptureRequestInvalidSinglePreview) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputPreviewStreams;
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
@@ -4595,7 +4574,7 @@ TEST_F(CameraHidlTest, processCaptureRequestInvalidSinglePreview) {
 
 // Check whether an invalid capture request with missing output buffers
 // will be reported correctly.
-TEST_F(CameraHidlTest, processCaptureRequestInvalidBuffer) {
+TEST_P(CameraHidlTest, processCaptureRequestInvalidBuffer) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputBlobStreams;
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
@@ -4660,7 +4639,7 @@ TEST_F(CameraHidlTest, processCaptureRequestInvalidBuffer) {
 }
 
 // Generate, trigger and flush a preview request
-TEST_F(CameraHidlTest, flushPreviewRequest) {
+TEST_P(CameraHidlTest, flushPreviewRequest) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputPreviewStreams;
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
@@ -4803,7 +4782,7 @@ TEST_F(CameraHidlTest, flushPreviewRequest) {
 }
 
 // Verify that camera flushes correctly without any pending requests.
-TEST_F(CameraHidlTest, flushEmpty) {
+TEST_P(CameraHidlTest, flushEmpty) {
     hidl_vec<hidl_string> cameraDeviceNames = getCameraDeviceNames(mProvider);
     std::vector<AvailableStream> outputPreviewStreams;
     AvailableStream previewThreshold = {kMaxPreviewWidth, kMaxPreviewHeight,
@@ -4848,7 +4827,7 @@ TEST_F(CameraHidlTest, flushEmpty) {
 }
 
 // Test camera provider@2.5 notify method
-TEST_F(CameraHidlTest, providerDeviceStateNotification) {
+TEST_P(CameraHidlTest, providerDeviceStateNotification) {
 
     notifyDeviceState(provider::V2_5::DeviceState::BACK_COVERED);
     notifyDeviceState(provider::V2_5::DeviceState::NORMAL);
@@ -5690,6 +5669,11 @@ void CameraHidlTest::verifyLogicalCameraMetadata(const std::string& cameraName,
         return;
     }
 
+    camera_metadata_ro_entry entry;
+    int retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_CONTROL_ZOOM_RATIO_RANGE, &entry);
+    bool hasZoomRatioRange = (0 == retcode && entry.count == 2);
+
     std::string version, cameraId;
     ASSERT_TRUE(::matchDeviceName(cameraName, mProviderType, &version, &cameraId));
     std::unordered_set<std::string> physicalIds;
@@ -5697,15 +5681,37 @@ void CameraHidlTest::verifyLogicalCameraMetadata(const std::string& cameraName,
     for (auto physicalId : physicalIds) {
         ASSERT_NE(physicalId, cameraId);
         bool isPublicId = false;
+        std::string fullPublicId;
         for (auto& deviceName : deviceNames) {
             std::string publicVersion, publicId;
             ASSERT_TRUE(::matchDeviceName(deviceName, mProviderType, &publicVersion, &publicId));
             if (physicalId == publicId) {
                 isPublicId = true;
+                fullPublicId = deviceName;
                 break;
             }
         }
         if (isPublicId) {
+            ::android::sp<::android::hardware::camera::device::V3_2::ICameraDevice> subDevice;
+            Return<void> ret;
+            ret = mProvider->getCameraDeviceInterface_V3_x(
+                fullPublicId, [&](auto status, const auto& device) {
+                    ASSERT_EQ(Status::OK, status);
+                    ASSERT_NE(device, nullptr);
+                    subDevice = device;
+                });
+            ASSERT_TRUE(ret.isOk());
+
+            ret = subDevice->getCameraCharacteristics(
+                    [&](auto status, const auto& chars) {
+                ASSERT_EQ(Status::OK, status);
+                retcode = find_camera_metadata_ro_entry(
+                        (const camera_metadata_t *)chars.data(),
+                        ANDROID_CONTROL_ZOOM_RATIO_RANGE, &entry);
+                bool subCameraHasZoomRatioRange = (0 == retcode && entry.count == 2);
+                ASSERT_EQ(hasZoomRatioRange, subCameraHasZoomRatioRange);
+            });
+            ASSERT_TRUE(ret.isOk());
             continue;
         }
 
@@ -5721,6 +5727,12 @@ void CameraHidlTest::verifyLogicalCameraMetadata(const std::string& cameraName,
                 [&](auto status, const auto& chars) {
             verifyCameraCharacteristics(status, chars);
             verifyMonochromeCharacteristics(chars, deviceVersion);
+
+            retcode = find_camera_metadata_ro_entry(
+                    (const camera_metadata_t *)chars.data(),
+                    ANDROID_CONTROL_ZOOM_RATIO_RANGE, &entry);
+            bool subCameraHasZoomRatioRange = (0 == retcode && entry.count == 2);
+            ASSERT_EQ(hasZoomRatioRange, subCameraHasZoomRatioRange);
         });
         ASSERT_TRUE(ret.isOk());
 
@@ -5740,8 +5752,7 @@ void CameraHidlTest::verifyLogicalCameraMetadata(const std::string& cameraName,
     // Make sure ANDROID_LOGICAL_MULTI_CAMERA_ACTIVE_PHYSICAL_ID is available in
     // result keys.
     if (deviceVersion >= CAMERA_DEVICE_API_VERSION_3_5) {
-        camera_metadata_ro_entry entry;
-        int retcode = find_camera_metadata_ro_entry(metadata,
+        retcode = find_camera_metadata_ro_entry(metadata,
                 ANDROID_REQUEST_AVAILABLE_RESULT_KEYS, &entry);
         if ((0 == retcode) && (entry.count > 0)) {
                 ASSERT_NE(std::find(entry.data.i32, entry.data.i32 + entry.count,
@@ -5841,6 +5852,7 @@ void CameraHidlTest::verifyCameraCharacteristics(Status status, const CameraMeta
     }
 
     verifyBokehCharacteristics(metadata);
+    verifyZoomCharacteristics(metadata);
 }
 
 void CameraHidlTest::verifyBokehCharacteristics(const camera_metadata_t* metadata) {
@@ -5871,38 +5883,51 @@ void CameraHidlTest::verifyBokehCharacteristics(const camera_metadata_t* metadat
 
     retcode = find_camera_metadata_ro_entry(metadata,
             ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, &entry);
-    bool hasBokehCharacteristicsKey = false;
+    bool hasBokehMaxSizesKey = false;
+    bool hasBokehZoomRatioRangesKey = false;
     if ((0 == retcode) && (entry.count > 0)) {
-        hasBokehCharacteristicsKey = std::find(entry.data.i32, entry.data.i32+entry.count,
-                ANDROID_CONTROL_AVAILABLE_BOKEH_CAPABILITIES) != entry.data.i32+entry.count;
+        hasBokehMaxSizesKey = std::find(entry.data.i32, entry.data.i32+entry.count,
+                ANDROID_CONTROL_AVAILABLE_BOKEH_MAX_SIZES) != entry.data.i32+entry.count;
+        hasBokehZoomRatioRangesKey = std::find(entry.data.i32, entry.data.i32+entry.count,
+                ANDROID_CONTROL_AVAILABLE_BOKEH_ZOOM_RATIO_RANGES) != entry.data.i32+entry.count;
     } else {
         ADD_FAILURE() << "Get camera availableCharacteristicsKeys failed!";
     }
+
+    camera_metadata_ro_entry maxSizesEntry;
     retcode = find_camera_metadata_ro_entry(metadata,
-            ANDROID_CONTROL_AVAILABLE_BOKEH_CAPABILITIES, &entry);
-    bool hasAvailableBokehCaps = (0 == retcode && entry.count > 0);
+            ANDROID_CONTROL_AVAILABLE_BOKEH_MAX_SIZES, &maxSizesEntry);
+    bool hasBokehMaxSizes = (0 == retcode && maxSizesEntry.count > 0);
+
+    camera_metadata_ro_entry zoomRatioRangesEntry;
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_CONTROL_AVAILABLE_BOKEH_ZOOM_RATIO_RANGES, &zoomRatioRangesEntry);
+    bool hasBokehZoomRatioRanges = (0 == retcode && zoomRatioRangesEntry.count > 0);
 
     // Bokeh keys must all be available, or all be unavailable.
-    bool noBokeh = !hasBokehRequestKey && !hasBokehResultKey && !hasBokehCharacteristicsKey &&
-            !hasAvailableBokehCaps;
+    bool noBokeh = !hasBokehRequestKey && !hasBokehResultKey && !hasBokehMaxSizesKey &&
+            !hasBokehZoomRatioRangesKey && !hasBokehMaxSizes && !hasBokehZoomRatioRanges;
     if (noBokeh) {
         return;
     }
-    bool hasBokeh = hasBokehRequestKey && hasBokehResultKey && hasBokehCharacteristicsKey &&
-            hasAvailableBokehCaps;
+    bool hasBokeh = hasBokehRequestKey && hasBokehResultKey && hasBokehMaxSizesKey &&
+            hasBokehZoomRatioRangesKey && hasBokehMaxSizes && hasBokehZoomRatioRanges;
     ASSERT_TRUE(hasBokeh);
 
     // Must have OFF, and must have one of STILL_CAPTURE and CONTINUOUS.
-    ASSERT_TRUE(entry.count == 6 || entry.count == 9);
+    // Only valid combinations: {OFF, CONTINUOUS}, {OFF, STILL_CAPTURE}, and
+    // {OFF, CONTINUOUS, STILL_CAPTURE}.
+    ASSERT_TRUE((maxSizesEntry.count == 6 && zoomRatioRangesEntry.count == 2) ||
+            (maxSizesEntry.count == 9 && zoomRatioRangesEntry.count == 4));
     bool hasOffMode = false;
     bool hasStillCaptureMode = false;
     bool hasContinuousMode = false;
     std::vector<AvailableStream> outputStreams;
     ASSERT_EQ(Status::OK, getAvailableOutputStreams(metadata, outputStreams));
-    for (int i = 0; i < entry.count; i += 3) {
-        int32_t mode = entry.data.i32[i];
-        int32_t maxWidth = entry.data.i32[i+1];
-        int32_t maxHeight = entry.data.i32[i+2];
+    for (int i = 0, j = 0; i < maxSizesEntry.count && j < zoomRatioRangesEntry.count; i += 3) {
+        int32_t mode = maxSizesEntry.data.i32[i];
+        int32_t maxWidth = maxSizesEntry.data.i32[i+1];
+        int32_t maxHeight = maxSizesEntry.data.i32[i+2];
         switch (mode) {
             case ANDROID_CONTROL_BOKEH_MODE_OFF:
                 hasOffMode = true;
@@ -5910,9 +5935,11 @@ void CameraHidlTest::verifyBokehCharacteristics(const camera_metadata_t* metadat
                 break;
             case ANDROID_CONTROL_BOKEH_MODE_STILL_CAPTURE:
                 hasStillCaptureMode = true;
+                j += 2;
                 break;
             case ANDROID_CONTROL_BOKEH_MODE_CONTINUOUS:
                 hasContinuousMode = true;
+                j += 2;
                 break;
             default:
                 ADD_FAILURE() << "Invalid bokehMode advertised: " << mode;
@@ -5920,6 +5947,7 @@ void CameraHidlTest::verifyBokehCharacteristics(const camera_metadata_t* metadat
         }
 
         if (mode != ANDROID_CONTROL_BOKEH_MODE_OFF) {
+            // Make sure size is supported.
             bool sizeSupported = false;
             for (const auto& stream : outputStreams) {
                 if ((stream.format == static_cast<int32_t>(PixelFormat::YCBCR_420_888) ||
@@ -5930,10 +5958,100 @@ void CameraHidlTest::verifyBokehCharacteristics(const camera_metadata_t* metadat
                 }
             }
             ASSERT_TRUE(sizeSupported);
+
+            // Make sure zoom range is valid
+            float minZoomRatio = zoomRatioRangesEntry.data.f[0];
+            float maxZoomRatio = zoomRatioRangesEntry.data.f[1];
+            ASSERT_GT(minZoomRatio, 0.0f);
+            ASSERT_LE(minZoomRatio, maxZoomRatio);
         }
     }
     ASSERT_TRUE(hasOffMode);
     ASSERT_TRUE(hasStillCaptureMode || hasContinuousMode);
+}
+
+void CameraHidlTest::verifyZoomCharacteristics(const camera_metadata_t* metadata) {
+    camera_metadata_ro_entry entry;
+    int retcode = 0;
+
+    // Check key availability in capabilities, request and result.
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM, &entry);
+    float maxDigitalZoom = 1.0;
+    if ((0 == retcode) && (entry.count == 1)) {
+        maxDigitalZoom = entry.data.f[0];
+    } else {
+        ADD_FAILURE() << "Get camera scalerAvailableMaxDigitalZoom failed!";
+    }
+
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_REQUEST_AVAILABLE_REQUEST_KEYS, &entry);
+    bool hasZoomRequestKey = false;
+    if ((0 == retcode) && (entry.count > 0)) {
+        hasZoomRequestKey = std::find(entry.data.i32, entry.data.i32+entry.count,
+                ANDROID_CONTROL_ZOOM_RATIO) != entry.data.i32+entry.count;
+    } else {
+        ADD_FAILURE() << "Get camera availableRequestKeys failed!";
+    }
+
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_REQUEST_AVAILABLE_RESULT_KEYS, &entry);
+    bool hasZoomResultKey = false;
+    if ((0 == retcode) && (entry.count > 0)) {
+        hasZoomResultKey = std::find(entry.data.i32, entry.data.i32+entry.count,
+                ANDROID_CONTROL_ZOOM_RATIO) != entry.data.i32+entry.count;
+    } else {
+        ADD_FAILURE() << "Get camera availableResultKeys failed!";
+    }
+
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, &entry);
+    bool hasZoomCharacteristicsKey = false;
+    if ((0 == retcode) && (entry.count > 0)) {
+        hasZoomCharacteristicsKey = std::find(entry.data.i32, entry.data.i32+entry.count,
+                ANDROID_CONTROL_ZOOM_RATIO_RANGE) != entry.data.i32+entry.count;
+    } else {
+        ADD_FAILURE() << "Get camera availableCharacteristicsKeys failed!";
+    }
+
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_CONTROL_ZOOM_RATIO_RANGE, &entry);
+    bool hasZoomRatioRange = (0 == retcode && entry.count == 2);
+
+    // Zoom keys must all be available, or all be unavailable.
+    bool noZoomRatio = !hasZoomRequestKey && !hasZoomResultKey && !hasZoomCharacteristicsKey &&
+            !hasZoomRatioRange;
+    if (noZoomRatio) {
+        return;
+    }
+    bool hasZoomRatio = hasZoomRequestKey && hasZoomResultKey && hasZoomCharacteristicsKey &&
+            hasZoomRatioRange;
+    ASSERT_TRUE(hasZoomRatio);
+
+    float minZoomRatio = entry.data.f[0];
+    float maxZoomRatio = entry.data.f[1];
+    if (maxDigitalZoom != maxZoomRatio) {
+        ADD_FAILURE() << "Maximum zoom ratio is different than maximum digital zoom!";
+    }
+    if (minZoomRatio > maxZoomRatio) {
+        ADD_FAILURE() << "Maximum zoom ratio is less than minimum zoom ratio!";
+    }
+    if (minZoomRatio > 1.0f) {
+        ADD_FAILURE() << "Minimum zoom ratio is more than 1.0!";
+    }
+    if (maxZoomRatio < 1.0f) {
+        ADD_FAILURE() << "Maximum zoom ratio is less than 1.0!";
+    }
+
+    // Make sure CROPPING_TYPE is CENTER_ONLY
+    retcode = find_camera_metadata_ro_entry(metadata,
+            ANDROID_SCALER_CROPPING_TYPE, &entry);
+    if ((0 == retcode) && (entry.count == 1)) {
+        int8_t croppingType = entry.data.u8[0];
+        ASSERT_EQ(croppingType, ANDROID_SCALER_CROPPING_TYPE_CENTER_ONLY);
+    } else {
+        ADD_FAILURE() << "Get camera scalerCroppingType failed!";
+    }
 }
 
 void CameraHidlTest::verifyMonochromeCharacteristics(const CameraMetadata& chars,
@@ -6434,11 +6552,27 @@ void CameraHidlTest::verifySessionReconfigurationQuery(
     }
 }
 
-int main(int argc, char **argv) {
-  ::testing::AddGlobalTestEnvironment(CameraHidlEnvironment::Instance());
-  ::testing::InitGoogleTest(&argc, argv);
-  CameraHidlEnvironment::Instance()->init(&argc, argv);
-  int status = RUN_ALL_TESTS();
-  ALOGI("Test result = %d", status);
-  return status;
+void CameraHidlTest::verifyRequestTemplate(const camera_metadata_t* metadata,
+        RequestTemplate requestTemplate) {
+    ASSERT_NE(nullptr, metadata);
+    size_t entryCount =
+            get_camera_metadata_entry_count(metadata);
+    ALOGI("template %u metadata entry count is %zu", (int32_t)requestTemplate, entryCount);
+    // TODO: we can do better than 0 here. Need to check how many required
+    // request keys we've defined for each template
+    ASSERT_GT(entryCount, 0u);
+
+    // Check zoomRatio
+    camera_metadata_ro_entry zoomRatioEntry;
+    int foundZoomRatio = find_camera_metadata_ro_entry(metadata,
+            ANDROID_CONTROL_ZOOM_RATIO, &zoomRatioEntry);
+    if (foundZoomRatio == 0) {
+        ASSERT_EQ(zoomRatioEntry.count, 1);
+        ASSERT_EQ(zoomRatioEntry.data.f[0], 1.0f);
+    }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+        PerInstance, CameraHidlTest,
+        testing::ValuesIn(android::hardware::getAllHalInstanceNames(ICameraProvider::descriptor)),
+        android::hardware::PrintInstanceNameToString);

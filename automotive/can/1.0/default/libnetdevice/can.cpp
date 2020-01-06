@@ -24,11 +24,13 @@
 #include <android-base/unique_fd.h>
 
 #include <linux/can.h>
+#include <linux/can/error.h>
 #include <linux/can/netlink.h>
+#include <linux/can/raw.h>
 
-namespace android {
-namespace netdevice {
-namespace can {
+namespace android::netdevice::can {
+
+static constexpr can_err_mask_t kErrMask = CAN_ERR_MASK;
 
 base::unique_fd socket(const std::string& ifname) {
     struct sockaddr_can addr = {};
@@ -42,6 +44,11 @@ base::unique_fd socket(const std::string& ifname) {
     base::unique_fd sock(::socket(PF_CAN, SOCK_RAW, CAN_RAW));
     if (!sock.ok()) {
         LOG(ERROR) << "Failed to create CAN socket";
+        return {};
+    }
+
+    if (setsockopt(sock.get(), SOL_CAN_RAW, CAN_RAW_ERR_FILTER, &kErrMask, sizeof(kErrMask)) < 0) {
+        LOG(ERROR) << "Can't receive error frames, CAN setsockpt failed: " << strerror(errno);
         return {};
     }
 
@@ -86,6 +93,4 @@ bool setBitrate(std::string ifname, uint32_t bitrate) {
     return sock.send(req) && sock.receiveAck();
 }
 
-}  // namespace can
-}  // namespace netdevice
-}  // namespace android
+}  // namespace android::netdevice::can
