@@ -38,7 +38,7 @@ using android::hardware::wifi::V1_3::implementation::mode_controller::
     WifiModeController;
 
 #ifdef ARCH_ARM_32
-#define DEFAULT_WIFIHAL_HW_BINDER_SIZE_KB 4
+#define DEFAULT_WIFIHAL_HW_BINDER_SIZE_KB 16
 size_t getHWBinderMmapSize() {
     size_t value = 0;
     value = property_get_int32("persist.vendor.wifi.wifihal.hw.binder.size", DEFAULT_WIFIHAL_HW_BINDER_SIZE_KB);
