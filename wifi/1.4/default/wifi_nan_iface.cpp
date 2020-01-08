@@ -757,6 +757,10 @@ WifiStatus WifiNanIface::configRequestInternal(
 WifiStatus WifiNanIface::disableRequestInternal(uint16_t cmd_id) {
     legacy_hal::wifi_error legacy_status =
         legacy_hal_.lock()->nanDisableRequest(ifname_, cmd_id);
+    if (!strcmp(ifname_.c_str(), kAwareIfaceName)) {
+       if (!iface_util_.lock()->SetUpState(ifname_, false))
+           LOG(ERROR) << "Failed to set NAN interface down";
+    }
     return createWifiStatusFromLegacyError(legacy_status);
 }
 

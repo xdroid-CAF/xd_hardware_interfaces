@@ -903,8 +903,16 @@ std::pair<WifiStatus, sp<IWifiNanIface>> WifiChip::createNanIfaceInternal() {
     if (!canCurrentModeSupportIfaceOfTypeWithCurrentIfaces(IfaceType::NAN)) {
         return {createWifiStatus(WifiStatusCode::ERROR_NOT_AVAILABLE), {}};
     }
-    // These are still assumed to be based on wlan0.
-    std::string ifname = getFirstActiveWlanIfaceName();
+    std::string ifname = kAwareIfaceName;
+    if (if_nametoindex(ifname.c_str())) {
+        if(!iface_util_.lock()->SetUpState(ifname.c_str(), true))
+           LOG(ERROR) << "Failed to set NAN interface UP " ;
+        else
+           LOG(INFO) << ifname.c_str() << " NAN interface is up";
+    } else {
+        ifname = getFirstActiveWlanIfaceName();
+        LOG(INFO) << ifname.c_str() << " use as NAN interface";
+    }
     sp<WifiNanIface> iface = new WifiNanIface(ifname, legacy_hal_, iface_util_);
     nan_ifaces_.push_back(iface);
     for (const auto& callback : event_cb_handler_.getCallbacks()) {
