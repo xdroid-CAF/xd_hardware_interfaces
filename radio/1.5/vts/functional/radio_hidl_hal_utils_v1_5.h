@@ -541,6 +541,16 @@ class RadioResponse_v1_5 : public ::android::hardware::radio::V1_5::IRadioRespon
     Return<void> setSystemSelectionChannelsResponse_1_5(const RadioResponseInfo& info);
 
     Return<void> startNetworkScanResponse_1_5(const RadioResponseInfo& info);
+
+    Return<void> setupDataCallResponse_1_5(
+            const RadioResponseInfo& info,
+            const android::hardware::radio::V1_5::SetupDataCallResult& dcResponse);
+
+    Return<void> setInitialAttachApnResponse_1_5(const RadioResponseInfo& info);
+
+    Return<void> setDataProfileResponse_1_5(const RadioResponseInfo& info);
+
+    Return<void> setRadioPowerResponse_1_5(const RadioResponseInfo& info);
 };
 
 /* Callback class for radio indication */
@@ -729,6 +739,13 @@ class RadioIndication_v1_5 : public ::android::hardware::radio::V1_5::IRadioIndi
 
     Return<void> modemReset(RadioIndicationType type,
                             const ::android::hardware::hidl_string& reason);
+
+    Return<void> registrationFailed(
+            RadioIndicationType type,
+            const ::android::hardware::radio::V1_5::CellIdentity& cellIdentity,
+            const ::android::hardware::hidl_string& chosenPlmn,
+            ::android::hardware::hidl_bitfield<::android::hardware::radio::V1_5::Domain> domain,
+            int32_t causeCode, int32_t additionalCauseCode);
 };
 
 // Test environment for Radio HIDL HAL.

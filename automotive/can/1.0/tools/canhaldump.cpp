@@ -20,16 +20,14 @@
 #include <android/hidl/manager/1.2/IServiceManager.h>
 #include <hidl-utils/hidl-utils.h>
 
+#include <linux/can.h>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <thread>
 
-namespace android {
-namespace hardware {
-namespace automotive {
-namespace can {
+namespace android::hardware::automotive::can {
 
 using namespace std::chrono_literals;
 
@@ -42,12 +40,14 @@ struct CanMessageListener : public V1_0::ICanMessageListener {
     CanMessageListener(std::string name) : name(name) {}
 
     virtual Return<void> onReceive(const V1_0::CanMessage& message) {
-        std::cout << "  " << name << "  " << std::hex << std::uppercase << std::setw(3)
+        int msgIdWidth = 3;
+        if (message.isExtendedId) msgIdWidth = 8;
+        std::cout << "  " << name << "  " << std::hex << std::uppercase << std::setw(msgIdWidth)
                   << std::setfill('0') << message.id << std::setw(0);
+        std::cout << "   [" << message.payload.size() << "] ";
         if (message.remoteTransmissionRequest) {
-            std::cout << " RTR";
+            std::cout << "remote request";
         } else {
-            std::cout << "   [" << message.payload.size() << "] ";
             for (const auto byte : message.payload) {
                 std::cout << " " << std::setfill('0') << std::setw(2) << unsigned(byte);
             }
@@ -125,10 +125,7 @@ static int main(int argc, char* argv[]) {
     return candump(argv[0]);
 }
 
-}  // namespace can
-}  // namespace automotive
-}  // namespace hardware
-}  // namespace android
+}  // namespace android::hardware::automotive::can
 
 int main(int argc, char* argv[]) {
     if (argc < 1) return -1;

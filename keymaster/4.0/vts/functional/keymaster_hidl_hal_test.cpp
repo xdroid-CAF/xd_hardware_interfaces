@@ -320,8 +320,7 @@ bool avb_verification_enabled() {
 bool verify_attestation_record(const string& challenge, const string& app_id,
                                AuthorizationSet expected_sw_enforced,
                                AuthorizationSet expected_hw_enforced, SecurityLevel security_level,
-                               const hidl_vec<uint8_t>& attestation_cert,
-                               std::chrono::time_point<std::chrono::system_clock> creation_time) {
+                               const hidl_vec<uint8_t>& attestation_cert) {
     X509_Ptr cert(parse_cert_blob(attestation_cert));
     EXPECT_TRUE(!!cert.get());
     if (!cert.get()) return false;
@@ -405,8 +404,6 @@ bool verify_attestation_record(const string& challenge, const string& app_id,
     EXPECT_FALSE(expected_hw_enforced.Contains(TAG_TRUSTED_USER_PRESENCE_REQUIRED));
     EXPECT_FALSE(att_hw_enforced.Contains(TAG_TRUSTED_USER_PRESENCE_REQUIRED));
 
-    KeymasterHidlTest::CheckCreationDateTime(att_sw_enforced, creation_time);
-
     if (att_hw_enforced.Contains(TAG_ALGORITHM, Algorithm::EC)) {
         // For ECDSA keys, either an EC_CURVE or a KEY_SIZE can be specified, but one must be.
         EXPECT_TRUE(att_hw_enforced.Contains(TAG_EC_CURVE) ||
@@ -423,18 +420,25 @@ bool verify_attestation_record(const string& challenge, const string& app_id,
     EXPECT_EQ(ErrorCode::OK, error);
 
     if (avb_verification_enabled()) {
-        property_get("ro.boot.vbmeta.digest", property_value, "nogood");
-        EXPECT_NE(strcmp(property_value, "nogood"), 0);
+        EXPECT_NE(property_get("ro.boot.vbmeta.digest", property_value, ""), 0);
         string prop_string(property_value);
         EXPECT_EQ(prop_string.size(), 64);
         EXPECT_EQ(prop_string, bin2hex(verified_boot_hash));
 
-        property_get("ro.boot.vbmeta.device_state", property_value, "nogood");
-        EXPECT_NE(strcmp(property_value, "nogood"), 0);
+        EXPECT_NE(property_get("ro.boot.vbmeta.device_state", property_value, ""), 0);
         if (!strcmp(property_value, "unlocked")) {
             EXPECT_FALSE(device_locked);
         } else {
             EXPECT_TRUE(device_locked);
+        }
+
+        // Check that the expected result from VBMeta matches the build type. Only a user build
+        // should have AVB reporting the device is locked.
+        EXPECT_NE(property_get("ro.build.type", property_value, ""), 0);
+        if (!strcmp(property_value, "user")) {
+            EXPECT_TRUE(device_locked);
+        } else {
+            EXPECT_FALSE(device_locked);
         }
     }
 
@@ -442,8 +446,7 @@ bool verify_attestation_record(const string& challenge, const string& app_id,
     std::string empty_boot_key(32, '\0');
     std::string verified_boot_key_str((const char*)verified_boot_key.data(),
                                       verified_boot_key.size());
-    property_get("ro.boot.verifiedbootstate", property_value, "nogood");
-    EXPECT_NE(property_value, "nogood");
+    EXPECT_NE(property_get("ro.boot.verifiedbootstate", property_value, ""), 0);
     if (!strcmp(property_value, "green")) {
         EXPECT_EQ(verified_boot_state, KM_VERIFIED_BOOT_VERIFIED);
         EXPECT_NE(0, memcmp(verified_boot_key.data(), empty_boot_key.data(),
@@ -546,28 +549,10 @@ TEST_P(NewKeyGenerationTest, Rsa) {
         EXPECT_TRUE(crypto_params.Contains(TAG_ALGORITHM, Algorithm::RSA));
         EXPECT_TRUE(crypto_params.Contains(TAG_KEY_SIZE, key_size))
             << "Key size " << key_size << "missing";
-        EXPECT_TRUE(crypto_params.Contains(TAG_RSA_PUBLIC_EXPONENT, 3U));
+        EXPECT_TRUE(crypto_params.Contains(TAG_RSA_PUBLIC_EXPONENT, 65537U));
 
         CheckedDeleteKey(&key_blob);
     }
-}
-
-/*
- * NewKeyGenerationTest.RsaCheckCreationDateTime
- *
- * Verifies that creation date time is correct.
- */
-TEST_P(NewKeyGenerationTest, RsaCheckCreationDateTime) {
-    KeyCharacteristics key_characteristics;
-    auto creation_time = std::chrono::system_clock::now();
-    ASSERT_EQ(ErrorCode::OK, GenerateKey(AuthorizationSetBuilder()
-                                                 .Authorization(TAG_NO_AUTH_REQUIRED)
-                                                 .RsaSigningKey(2048, 3)
-                                                 .Digest(Digest::NONE)
-                                                 .Padding(PaddingMode::NONE)));
-    GetCharacteristics(key_blob_, &key_characteristics);
-    AuthorizationSet sw_enforced = key_characteristics.softwareEnforced;
-    CheckCreationDateTime(sw_enforced, creation_time);
 }
 
 /*
@@ -632,23 +617,6 @@ TEST_P(NewKeyGenerationTest, Ecdsa) {
 
         CheckedDeleteKey(&key_blob);
     }
-}
-
-/*
- * NewKeyGenerationTest.EcCheckCreationDateTime
- *
- * Verifies that creation date time is correct.
- */
-TEST_P(NewKeyGenerationTest, EcCheckCreationDateTime) {
-    KeyCharacteristics key_characteristics;
-    auto creation_time = std::chrono::system_clock::now();
-    ASSERT_EQ(ErrorCode::OK, GenerateKey(AuthorizationSetBuilder()
-                                                 .Authorization(TAG_NO_AUTH_REQUIRED)
-                                                 .EcdsaSigningKey(256)
-                                                 .Digest(Digest::NONE)));
-    GetCharacteristics(key_blob_, &key_characteristics);
-    AuthorizationSet sw_enforced = key_characteristics.softwareEnforced;
-    CheckCreationDateTime(sw_enforced, creation_time);
 }
 
 /*
@@ -4232,7 +4200,6 @@ typedef KeymasterHidlTest AttestationTest;
  * Verifies that attesting to RSA keys works and generates the expected output.
  */
 TEST_P(AttestationTest, RsaAttestation) {
-    auto creation_time = std::chrono::system_clock::now();
     ASSERT_EQ(ErrorCode::OK, GenerateKey(AuthorizationSetBuilder()
                                              .Authorization(TAG_NO_AUTH_REQUIRED)
                                              .RsaSigningKey(2048, 65537)
@@ -4257,7 +4224,7 @@ TEST_P(AttestationTest, RsaAttestation) {
     EXPECT_TRUE(verify_attestation_record("challenge", "foo",                     //
                                           key_characteristics_.softwareEnforced,  //
                                           key_characteristics_.hardwareEnforced,  //
-                                          SecLevel(), cert_chain[0], creation_time));
+                                          SecLevel(), cert_chain[0]));
 }
 
 /*
@@ -4286,7 +4253,6 @@ TEST_P(AttestationTest, RsaAttestationRequiresAppId) {
  * Verifies that attesting to EC keys works and generates the expected output.
  */
 TEST_P(AttestationTest, EcAttestation) {
-    auto creation_time = std::chrono::system_clock::now();
     ASSERT_EQ(ErrorCode::OK, GenerateKey(AuthorizationSetBuilder()
                                              .Authorization(TAG_NO_AUTH_REQUIRED)
                                              .EcdsaSigningKey(EcCurve::P_256)
@@ -4308,7 +4274,7 @@ TEST_P(AttestationTest, EcAttestation) {
     EXPECT_TRUE(verify_attestation_record("challenge", "foo",                     //
                                           key_characteristics_.softwareEnforced,  //
                                           key_characteristics_.hardwareEnforced,  //
-                                          SecLevel(), cert_chain[0], creation_time));
+                                          SecLevel(), cert_chain[0]));
 }
 
 /*
@@ -4341,7 +4307,6 @@ TEST_P(AttestationTest, EcAttestationRequiresAttestationAppId) {
 TEST_P(AttestationTest, AttestationApplicationIDLengthProperlyEncoded) {
     std::vector<uint32_t> app_id_lengths{143, 258};
     for (uint32_t length : app_id_lengths) {
-        auto creation_time = std::chrono::system_clock::now();
         ASSERT_EQ(ErrorCode::OK, GenerateKey(AuthorizationSetBuilder()
                                                      .Authorization(TAG_NO_AUTH_REQUIRED)
                                                      .EcdsaSigningKey(EcCurve::P_256)
@@ -4359,7 +4324,7 @@ TEST_P(AttestationTest, AttestationApplicationIDLengthProperlyEncoded) {
         EXPECT_TRUE(verify_attestation_record("challenge", app_id,                    //
                                               key_characteristics_.softwareEnforced,  //
                                               key_characteristics_.hardwareEnforced,  //
-                                              SecLevel(), cert_chain[0], creation_time));
+                                              SecLevel(), cert_chain[0]));
         CheckedDeleteKey();
     }
 }

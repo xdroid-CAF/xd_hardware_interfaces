@@ -992,7 +992,8 @@ WifiStatus WifiChip::removeP2pIfaceInternal(const std::string& ifname) {
     return createWifiStatus(WifiStatusCode::SUCCESS);
 }
 
-std::pair<WifiStatus, sp<IWifiStaIface>> WifiChip::createStaIfaceInternal() {
+std::pair<WifiStatus, sp<V1_3::IWifiStaIface>>
+WifiChip::createStaIfaceInternal() {
     if (!canCurrentModeSupportIfaceOfTypeWithCurrentIfaces(IfaceType::STA)) {
         return {createWifiStatus(WifiStatusCode::ERROR_NOT_AVAILABLE), {}};
     }
@@ -1029,7 +1030,7 @@ WifiChip::getStaIfaceNamesInternal() {
     return {createWifiStatus(WifiStatusCode::SUCCESS), getNames(sta_ifaces_)};
 }
 
-std::pair<WifiStatus, sp<IWifiStaIface>> WifiChip::getStaIfaceInternal(
+std::pair<WifiStatus, sp<V1_3::IWifiStaIface>> WifiChip::getStaIfaceInternal(
     const std::string& ifname) {
     const auto iface = findUsingName(sta_ifaces_, ifname);
     if (!iface.get()) {
@@ -1067,7 +1068,7 @@ WifiStatus WifiChip::removeStaIfaceInternal(const std::string& ifname) {
 std::pair<WifiStatus, sp<V1_0::IWifiRttController>>
 WifiChip::createRttControllerInternal(const sp<IWifiIface>& /*bound_iface*/) {
     LOG(ERROR) << "createRttController is not supported on this HAL";
-    return {createWifiStatus(WifiStatusCode::ERROR_NOT_AVAILABLE), {}};
+    return {createWifiStatus(WifiStatusCode::ERROR_NOT_SUPPORTED), {}};
 }
 
 std::pair<WifiStatus, std::vector<WifiDebugRingBufferStatus>>
