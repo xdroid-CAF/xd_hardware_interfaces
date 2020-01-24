@@ -10,6 +10,9 @@ aidl_interface {
         "android/hardware/graphics/common/*.aidl",
     ],
     stability: "vintf",
+    imports: [
+        "vintf-common"
+    ],
     backend: {
         java: {
             enabled: false,
