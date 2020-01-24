@@ -43,6 +43,7 @@ using common::V1_2::Hdr;
 using common::V1_2::PixelFormat;
 using V2_1::Config;
 using V2_1::Display;
+using V2_1::Layer;
 using V2_4::Error;
 
 // HwcHalImpl implements V2_*::hal::ComposerHal on top of hwcomposer2
@@ -59,15 +60,14 @@ class HwcHalImpl : public V2_3::passthrough::detail::HwcHalImpl<Hal> {
                 mDevice, HWC2_CALLBACK_REFRESH, this,
                 reinterpret_cast<hwc2_function_pointer_t>(refreshHook));
         BaseType2_1::mDispatch.registerCallback(
-                mDevice, HWC2_CALLBACK_VSYNC, this,
-                reinterpret_cast<hwc2_function_pointer_t>(vsyncHook));
-        BaseType2_1::mDispatch.registerCallback(
                 mDevice, HWC2_CALLBACK_VSYNC_2_4, this,
                 reinterpret_cast<hwc2_function_pointer_t>(vsync_2_4_Hook));
-
         BaseType2_1::mDispatch.registerCallback(
                 mDevice, HWC2_CALLBACK_VSYNC_PERIOD_TIMING_CHANGED, this,
                 reinterpret_cast<hwc2_function_pointer_t>(vsyncPeriodTimingChangedHook));
+        BaseType2_1::mDispatch.registerCallback(
+                mDevice, HWC2_CALLBACK_SEAMLESS_POSSIBLE, this,
+                reinterpret_cast<hwc2_function_pointer_t>(seamlessPossibleHook));
     }
 
     void unregisterEventCallback_2_4() override {
@@ -80,10 +80,11 @@ class HwcHalImpl : public V2_3::passthrough::detail::HwcHalImpl<Hal> {
         // which is likely incorrect
         BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_HOTPLUG, this, nullptr);
         BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_REFRESH, this, nullptr);
-        BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_VSYNC, this, nullptr);
         BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_VSYNC_2_4, this, nullptr);
         BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_VSYNC_PERIOD_TIMING_CHANGED,
                                                 this, nullptr);
+        BaseType2_1::mDispatch.registerCallback(mDevice, HWC2_CALLBACK_SEAMLESS_POSSIBLE, this,
+                                                nullptr);
 
         mEventCallback_2_4 = nullptr;
     }
@@ -218,23 +219,54 @@ class HwcHalImpl : public V2_3::passthrough::detail::HwcHalImpl<Hal> {
         return Error::NONE;
     }
 
+    Error validateDisplay_2_4(
+            Display display, std::vector<Layer>* outChangedLayers,
+            std::vector<IComposerClient::Composition>* outCompositionTypes,
+            uint32_t* outDisplayRequestMask, std::vector<Layer>* outRequestedLayers,
+            std::vector<uint32_t>* outRequestMasks,
+            IComposerClient::ClientTargetProperty* outClientTargetProperty) override {
+        auto err = static_cast<Error>(BaseType2_1::validateDisplay(
+                display, outChangedLayers, outCompositionTypes, outDisplayRequestMask,
+                outRequestedLayers, outRequestMasks));
+        if (err != Error::NONE) {
+            return err;
+        }
+
+        if (mDispatch.getClientTargetProperty) {
+            hwc_client_target_property_t clientTargetProperty;
+            err = static_cast<Error>(
+                    mDispatch.getClientTargetProperty(mDevice, display, &clientTargetProperty));
+            outClientTargetProperty->pixelFormat =
+                    static_cast<PixelFormat>(clientTargetProperty.pixelFormat);
+            outClientTargetProperty->dataspace =
+                    static_cast<Dataspace>(clientTargetProperty.dataspace);
+        }
+
+        return err;
+    }
+
   protected:
     bool initDispatch() override {
         if (!BaseType2_3::initDispatch()) {
             return false;
         }
 
+        if (!BaseType2_1::initDispatch(HWC2_FUNCTION_GET_DISPLAY_VSYNC_PERIOD,
+                                       &mDispatch.getDisplayVsyncPeriod) ||
+            !BaseType2_1::initDispatch(HWC2_FUNCTION_SET_ACTIVE_CONFIG_WITH_CONSTRAINTS,
+                                       &mDispatch.setActiveConfigWithConstraints)) {
+            return false;
+        }
+
         this->initOptionalDispatch(HWC2_FUNCTION_GET_DISPLAY_CONNECTION_TYPE,
                                    &mDispatch.getDisplayConnectionType);
-        this->initOptionalDispatch(HWC2_FUNCTION_GET_DISPLAY_VSYNC_PERIOD,
-                                   &mDispatch.getDisplayVsyncPeriod);
-        this->initOptionalDispatch(HWC2_FUNCTION_SET_ACTIVE_CONFIG_WITH_CONSTRAINTS,
-                                   &mDispatch.setActiveConfigWithConstraints);
         this->initOptionalDispatch(HWC2_FUNCTION_SET_AUTO_LOW_LATENCY_MODE,
                                    &mDispatch.setAutoLowLatencyMode);
         this->initOptionalDispatch(HWC2_FUNCTION_GET_SUPPORTED_CONTENT_TYPES,
                                    &mDispatch.getSupportedContentTypes);
         this->initOptionalDispatch(HWC2_FUNCTION_SET_CONTENT_TYPE, &mDispatch.setContentType);
+        this->initOptionalDispatch(HWC2_FUNCTION_GET_CLIENT_TARGET_PROPERTY,
+                                   &mDispatch.getClientTargetProperty);
         return true;
     }
 
@@ -273,6 +305,11 @@ class HwcHalImpl : public V2_3::passthrough::detail::HwcHalImpl<Hal> {
         hal->mEventCallback_2_4->onVsyncPeriodTimingChanged(display, timeline);
     }
 
+    static void seamlessPossibleHook(hwc2_callback_data_t callbackData, hwc2_display_t display) {
+        auto hal = static_cast<HwcHalImpl*>(callbackData);
+        hal->mEventCallback_2_4->onSeamlessPossible(display);
+    }
+
   private:
     struct {
         HWC2_PFN_GET_DISPLAY_CONNECTION_TYPE getDisplayConnectionType;
@@ -281,6 +318,7 @@ class HwcHalImpl : public V2_3::passthrough::detail::HwcHalImpl<Hal> {
         HWC2_PFN_SET_AUTO_LOW_LATENCY_MODE setAutoLowLatencyMode;
         HWC2_PFN_GET_SUPPORTED_CONTENT_TYPES getSupportedContentTypes;
         HWC2_PFN_SET_CONTENT_TYPE setContentType;
+        HWC2_PFN_GET_CLIENT_TARGET_PROPERTY getClientTargetProperty;
     } mDispatch = {};
 
     hal::ComposerHal::EventCallback_2_4* mEventCallback_2_4 = nullptr;

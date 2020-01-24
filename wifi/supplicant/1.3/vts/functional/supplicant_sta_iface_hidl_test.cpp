@@ -14,13 +14,19 @@
  * limitations under the License.
  */
 
-#include <VtsHalHidlTargetTestBase.h>
+#include <VtsCoreUtil.h>
+#include <android/hardware/wifi/1.1/IWifi.h>
+#include <android/hardware/wifi/supplicant/1.1/ISupplicant.h>
 #include <android/hardware/wifi/supplicant/1.2/types.h>
+#include <android/hardware/wifi/supplicant/1.3/ISupplicant.h>
 #include <android/hardware/wifi/supplicant/1.3/ISupplicantStaIface.h>
 #include <android/hardware/wifi/supplicant/1.3/ISupplicantStaIfaceCallback.h>
 #include <android/hardware/wifi/supplicant/1.3/ISupplicantStaNetwork.h>
 #include <android/hardware/wifi/supplicant/1.3/types.h>
+#include <gtest/gtest.h>
+#include <hidl/GtestPrinter.h>
 #include <hidl/HidlSupport.h>
+#include <hidl/ServiceManagement.h>
 #include <hidl/Status.h>
 
 #include "supplicant_hidl_test_utils.h"
@@ -40,6 +46,7 @@ using ::android::hardware::wifi::supplicant::V1_2::DppNetRole;
 using ::android::hardware::wifi::supplicant::V1_2::DppProgressCode;
 using ::android::hardware::wifi::supplicant::V1_3::ConnectionCapabilities;
 using ::android::hardware::wifi::supplicant::V1_3::DppSuccessCode;
+using ::android::hardware::wifi::supplicant::V1_3::ISupplicant;
 using ::android::hardware::wifi::supplicant::V1_3::ISupplicantStaIface;
 using ::android::hardware::wifi::supplicant::V1_3::ISupplicantStaIfaceCallback;
 using ::android::hardware::wifi::supplicant::V1_3::ISupplicantStaNetwork;
@@ -48,16 +55,27 @@ using ::android::hardware::wifi::supplicant::V1_3::WpaDriverCapabilitiesMask;
 #define TIMEOUT_PERIOD 60
 class IfaceDppCallback;
 
-class SupplicantStaIfaceHidlTest : public ::testing::VtsHalHidlTargetTestBase {
+class SupplicantStaIfaceHidlTest
+    : public ::testing::TestWithParam<std::tuple<std::string, std::string>> {
    public:
     virtual void SetUp() override {
-        startSupplicantAndWaitForHidlService();
-        EXPECT_TRUE(turnOnExcessiveLogging());
-        sta_iface_ = getSupplicantStaIface_1_3();
+        wifi_v1_0_instance_name_ = std::get<0>(GetParam());
+        supplicant_v1_3_instance_name_ = std::get<1>(GetParam());
+        isP2pOn_ =
+            testing::deviceSupportsFeature("android.hardware.wifi.direct");
+
+        startSupplicantAndWaitForHidlService(wifi_v1_0_instance_name_,
+                                             supplicant_v1_3_instance_name_);
+        supplicant_ =
+            getSupplicant_1_3(supplicant_v1_3_instance_name_, isP2pOn_);
+        EXPECT_TRUE(turnOnExcessiveLogging(supplicant_));
+        sta_iface_ = getSupplicantStaIface_1_3(supplicant_);
         ASSERT_NE(sta_iface_.get(), nullptr);
     }
 
-    virtual void TearDown() override { stopSupplicant(); }
+    virtual void TearDown() override {
+        stopSupplicant(wifi_v1_0_instance_name_);
+    }
 
     int64_t pmkCacheExpirationTimeInSec;
     std::vector<uint8_t> serializedPmkCacheEntry;
@@ -104,6 +122,11 @@ class SupplicantStaIfaceHidlTest : public ::testing::VtsHalHidlTargetTestBase {
    protected:
     // ISupplicantStaIface object used for all tests in this fixture.
     sp<ISupplicantStaIface> sta_iface_;
+    sp<ISupplicant> supplicant_;
+    bool isP2pOn_ = false;
+    std::string wifi_v1_0_instance_name_;
+    std::string supplicant_v1_3_instance_name_;
+
     bool isDppSupported() {
         uint32_t keyMgmtMask = 0;
 
@@ -184,6 +207,9 @@ class IfaceCallback : public ISupplicantStaIfaceCallback {
         ISupplicantStaIfaceCallback::EapErrorCode /* eapErrorCode */) override {
         return Void();
     }
+    Return<void> onEapFailure_1_3(uint32_t /* eapErrorCode */) override {
+        return Void();
+    }
     Return<void> onWpsEventSuccess() override { return Void(); }
     Return<void> onWpsEventFail(
         const hidl_array<uint8_t, 6>& /* bssid */,
@@ -233,6 +259,12 @@ class IfaceCallback : public ISupplicantStaIfaceCallback {
     }
     Return<void> onBssTmHandlingDone(
         const ISupplicantStaIfaceCallback::BssTmData& /* data */) override {
+        return Void();
+    }
+    Return<void> onStateChanged_1_3(
+        ISupplicantStaIfaceCallback::State /* newState */,
+        const hidl_array<uint8_t, 6>& /*bssid */, uint32_t /* id */,
+        const hidl_vec<uint8_t>& /* ssid */, bool /* filsHlpSent */) override {
         return Void();
     }
 };
@@ -302,7 +334,7 @@ class IfaceBssTmHandlingDoneCallback : public IfaceCallback {
 /*
  * RegisterCallback_1_3
  */
-TEST_F(SupplicantStaIfaceHidlTest, RegisterCallback_1_3) {
+TEST_P(SupplicantStaIfaceHidlTest, RegisterCallback_1_3) {
     sta_iface_->registerCallback_1_3(
         new IfaceCallback(), [](const SupplicantStatus& status) {
             EXPECT_EQ(SupplicantStatusCode::SUCCESS, status.code);
@@ -312,7 +344,7 @@ TEST_F(SupplicantStaIfaceHidlTest, RegisterCallback_1_3) {
 /*
  * getConnectionCapabilities
  */
-TEST_F(SupplicantStaIfaceHidlTest, GetConnectionCapabilities) {
+TEST_P(SupplicantStaIfaceHidlTest, GetConnectionCapabilities) {
     sta_iface_->getConnectionCapabilities(
         [&](const SupplicantStatus& status,
             ConnectionCapabilities /* capabilities */) {
@@ -323,7 +355,7 @@ TEST_F(SupplicantStaIfaceHidlTest, GetConnectionCapabilities) {
 /*
  * GetWpaDriverCapabilities
  */
-TEST_F(SupplicantStaIfaceHidlTest, GetWpaDriverCapabilities) {
+TEST_P(SupplicantStaIfaceHidlTest, GetWpaDriverCapabilities) {
     sta_iface_->getWpaDriverCapabilities(
         [&](const SupplicantStatus& status, uint32_t) {
             EXPECT_EQ(SupplicantStatusCode::SUCCESS, status.code);
@@ -333,7 +365,7 @@ TEST_F(SupplicantStaIfaceHidlTest, GetWpaDriverCapabilities) {
 /*
  * SetMboCellularDataStatus
  */
-TEST_F(SupplicantStaIfaceHidlTest, SetMboCellularDataStatus) {
+TEST_P(SupplicantStaIfaceHidlTest, SetMboCellularDataStatus) {
     uint32_t driverCapMask = 0;
 
     // Get MBO support from the device.
@@ -358,7 +390,7 @@ TEST_F(SupplicantStaIfaceHidlTest, SetMboCellularDataStatus) {
 /*
  * GetKeyMgmtCapabilities_1_3
  */
-TEST_F(SupplicantStaIfaceHidlTest, GetKeyMgmtCapabilities_1_3) {
+TEST_P(SupplicantStaIfaceHidlTest, GetKeyMgmtCapabilities_1_3) {
     sta_iface_->getKeyMgmtCapabilities_1_3([&](const SupplicantStatus& status,
                                                uint32_t keyMgmtMask) {
         if (SupplicantStatusCode::SUCCESS != status.code) {
@@ -377,7 +409,7 @@ TEST_F(SupplicantStaIfaceHidlTest, GetKeyMgmtCapabilities_1_3) {
 /*
  * StartDppEnrolleeInitiator
  */
-TEST_F(SupplicantStaIfaceHidlTest, StartDppEnrolleeInitiator) {
+TEST_P(SupplicantStaIfaceHidlTest, StartDppEnrolleeInitiator) {
     // We need to first get the key management capabilities from the device.
     // If DPP is not supported, we just pass the test.
     if (!isDppSupported()) {
@@ -428,7 +460,7 @@ TEST_F(SupplicantStaIfaceHidlTest, StartDppEnrolleeInitiator) {
 /*
  * StartDppConfiguratorInitiator
  */
-TEST_F(SupplicantStaIfaceHidlTest, StartDppConfiguratorInitiator) {
+TEST_P(SupplicantStaIfaceHidlTest, StartDppConfiguratorInitiator) {
     // We need to first get the key management capabilities from the device.
     // If DPP is not supported, we just pass the test.
     if (!isDppSupported()) {
@@ -480,3 +512,89 @@ TEST_F(SupplicantStaIfaceHidlTest, StartDppConfiguratorInitiator) {
         EXPECT_EQ(SupplicantStatusCode::SUCCESS, status.code);
     });
 }
+
+/*
+ * FilsHlpAddRequest
+ */
+TEST_P(SupplicantStaIfaceHidlTest, FilsHlpAddRequest) {
+    uint32_t keyMgmtMask = 0;
+    uint8_t destMacAddr[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+    std::vector<uint8_t> pktBuffer = {
+        0x08, 0x00, 0x45, 0x10, 0x01, 0x3a, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11,
+        0x39, 0xa4, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x44,
+        0x00, 0x43, 0x01, 0x26, 0x77, 0x1e, 0x01, 0x01, 0x06, 0x00, 0x81, 0xf9,
+        0xf7, 0xcd, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x86, 0xc3,
+        0x65, 0xca, 0x34, 0x63, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x63, 0x82, 0x53, 0x63, 0x35, 0x01, 0x01, 0x3d,
+        0x07, 0x01, 0x86, 0xc3, 0x65, 0xca, 0x34, 0x63, 0x39, 0x02, 0x05, 0xdc,
+        0x3c, 0x0e, 0x61, 0x6e, 0x64, 0x72, 0x6f, 0x69, 0x64, 0x2d, 0x64, 0x68,
+        0x63, 0x70, 0x2d, 0x52, 0x37, 0x0a, 0x01, 0x03, 0x06, 0x0f, 0x1a, 0x1c,
+        0x33, 0x3a, 0x3b, 0x2b, 0xff, 0x00};
+
+    sta_iface_->getKeyMgmtCapabilities_1_3(
+        [&](const SupplicantStatus& status, uint32_t keyMgmtMaskInternal) {
+            EXPECT_EQ(SupplicantStatusCode::SUCCESS, status.code);
+            keyMgmtMask = keyMgmtMaskInternal;
+        });
+
+    SupplicantStatusCode expectedStatusCode =
+        (keyMgmtMask & (ISupplicantStaNetwork::KeyMgmtMask::FILS_SHA256 |
+                        ISupplicantStaNetwork::KeyMgmtMask::FILS_SHA384))
+            ? SupplicantStatusCode::SUCCESS
+            : SupplicantStatusCode::FAILURE_UNKNOWN;
+
+    sta_iface_->filsHlpAddRequest(
+        destMacAddr, pktBuffer,
+        [expectedStatusCode](const SupplicantStatus& status) {
+            EXPECT_EQ(expectedStatusCode, status.code);
+        });
+}
+
+/*
+ * FilsHlpFlushRequest
+ */
+TEST_P(SupplicantStaIfaceHidlTest, FilsHlpFlushRequest) {
+    uint32_t keyMgmtMask = 0;
+    sta_iface_->getKeyMgmtCapabilities_1_3(
+        [&](const SupplicantStatus& status, uint32_t keyMgmtMaskInternal) {
+            EXPECT_EQ(SupplicantStatusCode::SUCCESS, status.code);
+            keyMgmtMask = keyMgmtMaskInternal;
+        });
+
+    SupplicantStatusCode expectedStatusCode =
+        (keyMgmtMask & (ISupplicantStaNetwork::KeyMgmtMask::FILS_SHA256 |
+                        ISupplicantStaNetwork::KeyMgmtMask::FILS_SHA384))
+            ? SupplicantStatusCode::SUCCESS
+            : SupplicantStatusCode::FAILURE_UNKNOWN;
+
+    sta_iface_->filsHlpFlushRequest(
+        [expectedStatusCode](const SupplicantStatus& status) {
+            EXPECT_EQ(expectedStatusCode, status.code);
+        });
+}
+INSTANTIATE_TEST_CASE_P(
+    PerInstance, SupplicantStaIfaceHidlTest,
+    testing::Combine(
+        testing::ValuesIn(android::hardware::getAllHalInstanceNames(
+            android::hardware::wifi::V1_0::IWifi::descriptor)),
+        testing::ValuesIn(android::hardware::getAllHalInstanceNames(
+            android::hardware::wifi::supplicant::V1_3::ISupplicant::
+                descriptor))),
+    android::hardware::PrintInstanceTupleNameToString<>);

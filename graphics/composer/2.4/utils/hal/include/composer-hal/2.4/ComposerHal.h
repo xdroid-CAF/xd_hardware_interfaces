@@ -49,6 +49,7 @@ class ComposerHal : public V2_3::hal::ComposerHal {
                                  VsyncPeriodNanos vsyncPeriodNanos) = 0;
         virtual void onVsyncPeriodTimingChanged(Display display,
                                                 const VsyncPeriodChangeTimeline& timeline) = 0;
+        virtual void onSeamlessPossible(Display display) = 0;
     };
 
     virtual void registerEventCallback_2_4(EventCallback_2_4* callback) = 0;
@@ -72,6 +73,12 @@ class ComposerHal : public V2_3::hal::ComposerHal {
             Display display,
             std::vector<IComposerClient::ContentType>* outSupportedContentTypes) = 0;
     virtual Error setContentType(Display display, IComposerClient::ContentType contentType) = 0;
+    virtual Error validateDisplay_2_4(
+            Display display, std::vector<Layer>* outChangedLayers,
+            std::vector<IComposerClient::Composition>* outCompositionTypes,
+            uint32_t* outDisplayRequestMask, std::vector<Layer>* outRequestedLayers,
+            std::vector<uint32_t>* outRequestMasks,
+            IComposerClient::ClientTargetProperty* outClientTargetProperty) = 0;
 };
 
 }  // namespace hal
