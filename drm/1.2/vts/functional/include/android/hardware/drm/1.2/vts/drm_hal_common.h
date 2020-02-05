@@ -23,28 +23,33 @@
 #include <android/hardware/drm/1.2/IDrmPlugin.h>
 #include <android/hardware/drm/1.2/IDrmPluginListener.h>
 #include <android/hardware/drm/1.2/types.h>
+#include <hidl/HidlSupport.h>
 
+#include <array>
 #include <chrono>
+# include <iostream>
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "drm_hal_vendor_module_api.h"
+#include "drm_vts_helper.h"
 #include "vendor_modules.h"
 #include "VtsHalHidlTargetCallbackBase.h"
 
 using ::android::hardware::drm::V1_0::EventType;
 using ::android::hardware::drm::V1_0::KeyedVector;
-using KeyStatusV1_0 = ::android::hardware::drm::V1_0::KeyStatus;
 using ::android::hardware::drm::V1_0::KeyType;
 using ::android::hardware::drm::V1_0::Mode;
 using ::android::hardware::drm::V1_0::Pattern;
 using ::android::hardware::drm::V1_0::SessionId;
 using ::android::hardware::drm::V1_0::SubSample;
+using ::android::hardware::drm::V1_1::SecurityLevel;
 
-using ::android::hardware::drm::V1_1::ICryptoFactory;
-
+using KeyStatusV1_0 = ::android::hardware::drm::V1_0::KeyStatus;
+using StatusV1_0 = ::android::hardware::drm::V1_0::Status;
 using StatusV1_2 = ::android::hardware::drm::V1_2::Status;
 
 using ::android::hardware::hidl_array;
@@ -55,20 +60,16 @@ using ::android::hardware::Void;
 using ::android::hidl::memory::V1_0::IMemory;
 using ::android::sp;
 
+using drm_vts::DrmHalTestParam;
+
+using std::array;
 using std::map;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 
 #define EXPECT_OK(ret) EXPECT_TRUE(ret.isOk())
-
-#define RETURN_IF_SKIPPED                                                                \
-    if (!vendorModule->isInstalled()) {                                                  \
-        GTEST_SKIP() << "This drm scheme not supported."                                 \
-                     << " library:" << GetParam()                                        \
-                     << " service-name:" << vendorModule->getServiceName() << std::endl; \
-        return;                                                                          \
-    }
 
 namespace android {
 namespace hardware {
@@ -76,7 +77,7 @@ namespace drm {
 namespace V1_2 {
 namespace vts {
 
-class DrmHalTest : public ::testing::TestWithParam<std::string> {
+class DrmHalTest : public ::testing::TestWithParam<DrmHalTestParam> {
    public:
     static drm_vts::VendorModules* gVendorModules;
     DrmHalTest();
@@ -84,7 +85,12 @@ class DrmHalTest : public ::testing::TestWithParam<std::string> {
     virtual void TearDown() override {}
 
    protected:
+    hidl_array<uint8_t, 16> getUUID();
     hidl_array<uint8_t, 16> getVendorUUID();
+    hidl_array<uint8_t, 16> GetParamUUID() { return GetParam().scheme_; }
+    string GetParamService() { return GetParam().instance_; }
+    void provision();
+    SessionId openSession(SecurityLevel level, StatusV1_0* err);
     SessionId openSession();
     void closeSession(const SessionId& sessionId);
     hidl_vec<uint8_t> loadKeys(const SessionId& sessionId,
@@ -127,13 +133,15 @@ class DrmHalTest : public ::testing::TestWithParam<std::string> {
 
 };
 
-class DrmHalClearkeyTest : public DrmHalTest {
+class DrmHalClearkeyTestV1_2 : public DrmHalTest {
    public:
      virtual void SetUp() override {
          DrmHalTest::SetUp();
-
-         if (vendorModule == nullptr) {
-             GTEST_SKIP() << "Instance not supported";
+         const uint8_t kClearKeyUUID[16] = {
+             0xE2, 0x71, 0x9D, 0x58, 0xA9, 0x85, 0xB3, 0xC9,
+             0x78, 0x1A, 0xB0, 0x30, 0xAF, 0x78, 0xD3, 0x0E};
+         if (!drmFactory->isCryptoSchemeSupported(kClearKeyUUID)) {
+             GTEST_SKIP() << "ClearKey not supported by " << GetParamService();
          }
      }
     virtual void TearDown() override {}

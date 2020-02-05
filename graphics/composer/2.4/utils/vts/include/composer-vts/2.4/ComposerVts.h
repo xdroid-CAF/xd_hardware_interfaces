@@ -19,7 +19,6 @@
 #include <memory>
 #include <vector>
 
-#include <VtsHalHidlTargetTestBase.h>
 #include <android/hardware/graphics/composer/2.4/IComposer.h>
 #include <android/hardware/graphics/composer/2.4/IComposerClient.h>
 #include <composer-vts/2.3/ComposerVts.h>
@@ -92,6 +91,9 @@ class ComposerClient : public V2_3::vts::ComposerClient {
             Display display, std::vector<IComposerClient::ContentType>* outSupportedContentTypes);
 
     Error setContentType(Display display, IComposerClient::ContentType contentType);
+
+    Error getLayerGenericMetadataKeys(
+            std::vector<IComposerClient::LayerGenericMetadataKey>* outKeys);
 
   private:
     const sp<IComposerClient> mClient;
