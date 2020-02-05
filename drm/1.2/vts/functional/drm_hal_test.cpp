@@ -17,7 +17,9 @@
 #define LOG_TAG "drm_hal_test@1.2"
 
 #include <gtest/gtest.h>
+#include <hidl/GtestPrinter.h>
 #include <hidl/HidlSupport.h>
+#include <hidl/ServiceManagement.h>
 #include <log/log.h>
 #include <openssl/aes.h>
 
@@ -35,7 +37,6 @@ using ::android::hardware::drm::V1_2::OfflineLicenseState;
 using ::android::hardware::drm::V1_2::vts::DrmHalClearkeyTest;
 using ::android::hardware::drm::V1_2::vts::DrmHalPluginListener;
 using ::android::hardware::drm::V1_2::vts::DrmHalTest;
-using ::android::hardware::drm::V1_2::vts::DrmHidlEnvironment;
 using ::android::hardware::drm::V1_2::vts::kCallbackLostState;
 using ::android::hardware::drm::V1_2::vts::kCallbackKeysChange;
 
@@ -52,6 +53,7 @@ static const SecurityLevel kSwSecureCrypto = SecurityLevel::SW_SECURE_CRYPTO;
  * Ensure drm factory supports module UUID Scheme
  */
 TEST_P(DrmHalTest, VendorUuidSupported) {
+    RETURN_IF_SKIPPED;
     auto res = drmFactory->isCryptoSchemeSupported_1_2(getVendorUUID(), kVideoMp4, kSwSecureCrypto);
     ALOGI("kVideoMp4 = %s res %d", kVideoMp4, (bool)res);
     EXPECT_TRUE(res);
@@ -61,6 +63,7 @@ TEST_P(DrmHalTest, VendorUuidSupported) {
  * Ensure drm factory doesn't support an invalid scheme UUID
  */
 TEST_P(DrmHalTest, InvalidPluginNotSupported) {
+    RETURN_IF_SKIPPED;
     const uint8_t kInvalidUUID[16] = {
         0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
         0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80};
@@ -71,6 +74,7 @@ TEST_P(DrmHalTest, InvalidPluginNotSupported) {
  * Ensure drm factory doesn't support an empty UUID
  */
 TEST_P(DrmHalTest, EmptyPluginUUIDNotSupported) {
+    RETURN_IF_SKIPPED;
     hidl_array<uint8_t, 16> emptyUUID;
     memset(emptyUUID.data(), 0, 16);
     EXPECT_FALSE(drmFactory->isCryptoSchemeSupported_1_2(emptyUUID, kVideoMp4, kSwSecureCrypto));
@@ -80,6 +84,7 @@ TEST_P(DrmHalTest, EmptyPluginUUIDNotSupported) {
  * Ensure drm factory doesn't support an invalid mime type
  */
 TEST_P(DrmHalTest, BadMimeNotSupported) {
+    RETURN_IF_SKIPPED;
     EXPECT_FALSE(drmFactory->isCryptoSchemeSupported_1_2(getVendorUUID(), kBadMime, kSwSecureCrypto));
 }
 
@@ -133,6 +138,7 @@ TEST_P(DrmHalTest, DoProvisioning) {
  * A get key request should fail if no sessionId is provided
  */
 TEST_P(DrmHalTest, GetKeyRequestNoSession) {
+    RETURN_IF_SKIPPED;
     SessionId invalidSessionId;
     hidl_vec<uint8_t> initData;
     KeyedVector optionalParameters;
@@ -150,6 +156,7 @@ TEST_P(DrmHalTest, GetKeyRequestNoSession) {
  * invalid mime type
  */
 TEST_P(DrmHalTest, GetKeyRequestBadMime) {
+    RETURN_IF_SKIPPED;
     auto sessionId = openSession();
     hidl_vec<uint8_t> initData;
     KeyedVector optionalParameters;
@@ -186,6 +193,7 @@ void checkKeySetIdState(Status status, OfflineLicenseState state) {
  * Test drm plugin offline key support
  */
 TEST_P(DrmHalTest, OfflineLicenseTest) {
+    RETURN_IF_SKIPPED;
     auto sessionId = openSession();
     hidl_vec<uint8_t> keySetId = loadKeys(sessionId, KeyType::OFFLINE);
 
@@ -225,6 +233,7 @@ TEST_P(DrmHalTest, OfflineLicenseTest) {
  * Test drm plugin offline key state
  */
 TEST_P(DrmHalTest, OfflineLicenseStateTest) {
+    RETURN_IF_SKIPPED;
     auto sessionId = openSession();
     DrmHalVTSVendorModule_V1::ContentConfiguration content = getContent(KeyType::OFFLINE);
     hidl_vec<uint8_t> keySetId = loadKeys(sessionId, content, KeyType::OFFLINE);
@@ -249,6 +258,7 @@ TEST_P(DrmHalTest, OfflineLicenseStateTest) {
  * Negative offline license test. Remove empty keySetId
  */
 TEST_P(DrmHalTest, RemoveEmptyKeySetId) {
+    RETURN_IF_SKIPPED;
     KeySetId emptyKeySetId;
     Status err = drmPlugin->removeOfflineLicense(emptyKeySetId);
     EXPECT_EQ(Status::BAD_VALUE, err);
@@ -258,6 +268,7 @@ TEST_P(DrmHalTest, RemoveEmptyKeySetId) {
  * Negative offline license test. Get empty keySetId state
  */
 TEST_P(DrmHalTest, GetEmptyKeySetIdState) {
+    RETURN_IF_SKIPPED;
     KeySetId emptyKeySetId;
     auto res = drmPlugin->getOfflineLicenseState(emptyKeySetId, checkKeySetIdState<Status::BAD_VALUE, OfflineLicenseState::UNKNOWN>);
     EXPECT_OK(res);
@@ -267,6 +278,7 @@ TEST_P(DrmHalTest, GetEmptyKeySetIdState) {
  * Test that the plugin returns valid connected and max HDCP levels
  */
 TEST_P(DrmHalTest, GetHdcpLevels) {
+    RETURN_IF_SKIPPED;
     auto res = drmPlugin->getHdcpLevels_1_2(
             [&](StatusV1_2 status, const HdcpLevel &connectedLevel,
                 const HdcpLevel &maxLevel) {
@@ -421,6 +433,7 @@ TEST_P(DrmHalTest, EncryptedAesCtrSegmentTestNoKeys) {
  * Ensure clearkey drm factory doesn't support security level higher than supported
  */
 TEST_P(DrmHalClearkeyTest, BadLevelNotSupported) {
+    RETURN_IF_SKIPPED;
     const SecurityLevel kHwSecureAll = SecurityLevel::HW_SECURE_ALL;
     EXPECT_FALSE(drmFactory->isCryptoSchemeSupported_1_2(getVendorUUID(), kVideoMp4, kHwSecureAll));
 }
@@ -429,6 +442,7 @@ TEST_P(DrmHalClearkeyTest, BadLevelNotSupported) {
  * Test resource contention during attempt to generate key request
  */
 TEST_P(DrmHalClearkeyTest, GetKeyRequestResourceContention) {
+    RETURN_IF_SKIPPED;
     Status status = drmPlugin->setPropertyString(kDrmErrorTestKey, kDrmErrorResourceContention);
     EXPECT_EQ(Status::OK, status);
     auto sessionId = openSession();
@@ -450,6 +464,7 @@ TEST_P(DrmHalClearkeyTest, GetKeyRequestResourceContention) {
  * Test clearkey plugin offline key with mock error
  */
 TEST_P(DrmHalClearkeyTest, OfflineLicenseInvalidState) {
+    RETURN_IF_SKIPPED;
     auto sessionId = openSession();
     hidl_vec<uint8_t> keySetId = loadKeys(sessionId, KeyType::OFFLINE);
     Status status = drmPlugin->setPropertyString(kDrmErrorTestKey, kDrmErrorInvalidState);
@@ -471,6 +486,7 @@ TEST_P(DrmHalClearkeyTest, OfflineLicenseInvalidState) {
  * Test SessionLostState is triggered on error
  */
 TEST_P(DrmHalClearkeyTest, SessionLostState) {
+    RETURN_IF_SKIPPED;
     sp<DrmHalPluginListener> listener = new DrmHalPluginListener();
     auto res = drmPlugin->setListener(listener);
     EXPECT_OK(res);
@@ -491,6 +507,7 @@ TEST_P(DrmHalClearkeyTest, SessionLostState) {
  * Negative decrypt test. Decrypt with invalid key.
  */
 TEST_P(DrmHalClearkeyTest, DecryptWithEmptyKey) {
+    RETURN_IF_SKIPPED;
     vector<uint8_t> iv(AES_BLOCK_SIZE, 0);
     const Pattern noPattern = {0, 0};
     const uint32_t kClearBytes = 512;
@@ -528,6 +545,7 @@ TEST_P(DrmHalClearkeyTest, DecryptWithEmptyKey) {
  * Negative decrypt test. Decrypt with a key exceeds AES_BLOCK_SIZE.
  */
 TEST_P(DrmHalClearkeyTest, DecryptWithKeyTooLong) {
+    RETURN_IF_SKIPPED;
     vector<uint8_t> iv(AES_BLOCK_SIZE, 0);
     const Pattern noPattern = {0, 0};
     const uint32_t kClearBytes = 512;
@@ -559,17 +577,24 @@ TEST_P(DrmHalClearkeyTest, DecryptWithKeyTooLong) {
  * Instantiate the set of test cases for each vendor module
  */
 
-INSTANTIATE_TEST_CASE_P(
-        DrmHalTestClearkey, DrmHalTest,
-        testing::Values("clearkey"));
+static const std::set<std::string> kAllInstances = [] {
+    using ::android::hardware::drm::V1_2::ICryptoFactory;
+    using ::android::hardware::drm::V1_2::IDrmFactory;
 
-INSTANTIATE_TEST_CASE_P(
-        DrmHalTestClearkeyExtended, DrmHalClearkeyTest,
-        testing::Values("clearkey"));
+    std::vector<std::string> drmInstances =
+            android::hardware::getAllHalInstanceNames(IDrmFactory::descriptor);
+    std::vector<std::string> cryptoInstances =
+            android::hardware::getAllHalInstanceNames(ICryptoFactory::descriptor);
+    std::set<std::string> allInstances;
+    allInstances.insert(drmInstances.begin(), drmInstances.end());
+    allInstances.insert(cryptoInstances.begin(), cryptoInstances.end());
+    return allInstances;
+}();
 
-INSTANTIATE_TEST_CASE_P(
-        DrmHalTestVendor, DrmHalTest,
-        testing::ValuesIn(DrmHalTest::gVendorModules->getPathList()));
+INSTANTIATE_TEST_SUITE_P(PerInstance, DrmHalTest, testing::ValuesIn(kAllInstances),
+                         android::hardware::PrintInstanceNameToString);
+INSTANTIATE_TEST_SUITE_P(PerInstance, DrmHalClearkeyTest, testing::ValuesIn(kAllInstances),
+                         android::hardware::PrintInstanceNameToString);
 
 int main(int argc, char** argv) {
 #if defined(__LP64__)
@@ -582,9 +607,7 @@ int main(int argc, char** argv) {
         std::cerr << "WARNING: No vendor modules found in " << kModulePath <<
                 ", all vendor tests will be skipped" << std::endl;
     }
-    ::testing::AddGlobalTestEnvironment(DrmHidlEnvironment::Instance());
     ::testing::InitGoogleTest(&argc, argv);
-    DrmHidlEnvironment::Instance()->init(&argc, argv);
     int status = RUN_ALL_TESTS();
     ALOGI("Test result = %d", status);
     return status;

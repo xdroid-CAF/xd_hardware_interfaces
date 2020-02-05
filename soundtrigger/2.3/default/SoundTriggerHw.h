@@ -85,6 +85,9 @@ struct SoundTriggerHw : public ISoundTriggerHw {
     Return<int32_t> getModelState(int32_t modelHandle) override;
 
     // Methods from V2_3::ISoundTriggerHw follow.
+    Return<void> getProperties_2_3(getProperties_2_3_cb _hidl_cb) override;
+    Return<int32_t> startRecognition_2_3(int32_t modelHandle,
+                                         const V2_3::RecognitionConfig& config) override;
     Return<int32_t> setParameter(V2_0::SoundModelHandle modelHandle, ModelParameter modelParam,
                                  int32_t value) override;
     Return<void> getParameter(V2_0::SoundModelHandle modelHandle, ModelParameter modelParam,
@@ -156,6 +159,8 @@ struct SoundTriggerHw : public ISoundTriggerHw {
     void convertUuidToHal(sound_trigger_uuid_t* halUuid, const Uuid* uuid);
     void convertPropertiesFromHal(V2_0::ISoundTriggerHw::Properties* properties,
                                   const struct sound_trigger_properties* halProperties);
+    void convertPropertiesFromHal(V2_3::Properties* properties,
+                                  const struct sound_trigger_properties_header* header);
     static sound_trigger_model_parameter_t convertModelParameterToHal(ModelParameter param);
     void convertTriggerPhraseToHal(struct sound_trigger_phrase* halTriggerPhrase,
                                    const V2_0::ISoundTriggerHw::Phrase* triggerPhrase);
@@ -167,6 +172,8 @@ struct SoundTriggerHw : public ISoundTriggerHw {
     // returned recognition config must be freed by caller
     struct sound_trigger_recognition_config* convertRecognitionConfigToHal(
             const V2_0::ISoundTriggerHw::RecognitionConfig* config);
+    struct sound_trigger_recognition_config_header* convertRecognitionConfigToHalHeader(
+            const V2_3::RecognitionConfig* config);
 
     static void convertPhraseRecognitionExtraFromHal(
             V2_0::PhraseRecognitionExtra* extra,

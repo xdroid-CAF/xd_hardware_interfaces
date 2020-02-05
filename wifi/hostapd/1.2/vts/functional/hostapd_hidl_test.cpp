@@ -41,6 +41,9 @@ namespace {
 constexpr unsigned char kNwSsid[] = {'t', 'e', 's', 't', '1',
                                      '2', '3', '4', '5'};
 constexpr char kNwPassphrase[] = "test12345";
+constexpr char kInvalidMaxPskNwPassphrase[] =
+    "0123456789012345678901234567890123456789012345678901234567890123456789";
+constexpr char kInvalidMinPskNwPassphrase[] = "test";
 constexpr int kIfaceChannel = 6;
 constexpr int kIfaceInvalidChannel = 567;
 constexpr uint8_t kTestZeroMacAddr[] = {[0 ... 5] = 0x0};
@@ -61,7 +64,7 @@ class HostapdHidlTest
         ASSERT_NE(hostapd_.get(), nullptr);
     }
 
-    virtual void TearDown() override { stopHostapd(wifi_instance_name_); }
+    virtual void TearDown() override { stopHostapd(hostapd_instance_name_); }
 
    protected:
     std::string getPrimaryWlanIfaceName() {
@@ -109,57 +112,83 @@ class HostapdHidlTest
         return iface_params_1_2;
     }
 
-    IHostapd::IfaceParams getIfaceParamsWithAcsAndChannelRange() {
+    IHostapd::IfaceParams getIfaceParamsWithAcsAndFreqRange() {
         IHostapd::IfaceParams iface_params_1_2 = getIfaceParamsWithAcs();
-        ::android::hardware::wifi::hostapd::V1_1::IHostapd::ChannelParams
-            channelParams;
-        ::android::hardware::wifi::hostapd::V1_1::IHostapd::AcsChannelRange
-            acsChannelRange;
-        acsChannelRange.start = 1;
-        acsChannelRange.end = 11;
-        std::vector<
-            ::android::hardware::wifi::hostapd::V1_1::IHostapd::AcsChannelRange>
-            vec_acsChannelRange;
-        vec_acsChannelRange.push_back(acsChannelRange);
-        channelParams.acsChannelRanges = vec_acsChannelRange;
-        iface_params_1_2.V1_1.channelParams = channelParams;
+        ::android::hardware::wifi::hostapd::V1_2::IHostapd::AcsFrequencyRange
+            acsFrequencyRange;
+        acsFrequencyRange.start = 2412;
+        acsFrequencyRange.end = 2462;
+        std::vector<::android::hardware::wifi::hostapd::V1_2::IHostapd::
+                        AcsFrequencyRange>
+            vec_acsFrequencyRange;
+        vec_acsFrequencyRange.push_back(acsFrequencyRange);
+        iface_params_1_2.channelParams.acsChannelFreqRangesMhz =
+            vec_acsFrequencyRange;
         return iface_params_1_2;
     }
 
-    IHostapd::IfaceParams getIfaceParamsWithAcsAndInvalidChannelRange() {
+    IHostapd::IfaceParams getIfaceParamsWithAcsAndInvalidFreqRange() {
         IHostapd::IfaceParams iface_params_1_2 =
-            getIfaceParamsWithAcsAndChannelRange();
-        iface_params_1_2.V1_1.channelParams.acsChannelRanges[0].start = 222;
-        iface_params_1_2.V1_1.channelParams.acsChannelRanges[0].end = 999;
+            getIfaceParamsWithAcsAndFreqRange();
+        iface_params_1_2.channelParams.acsChannelFreqRangesMhz[0].start = 222;
+        iface_params_1_2.channelParams.acsChannelFreqRangesMhz[0].end = 999;
         return iface_params_1_2;
     }
 
     IHostapd::NetworkParams getOpenNwParams() {
-        IHostapd::NetworkParams nw_params;
-        nw_params.ssid =
+        IHostapd::NetworkParams nw_params_1_2;
+        ::android::hardware::wifi::hostapd::V1_0::IHostapd::NetworkParams
+            nw_params_1_0;
+        nw_params_1_0.ssid =
             std::vector<uint8_t>(kNwSsid, kNwSsid + sizeof(kNwSsid));
-        nw_params.isHidden = false;
-        nw_params.encryptionType = IHostapd::EncryptionType::NONE;
-        return nw_params;
+        nw_params_1_0.isHidden = false;
+        nw_params_1_2.V1_0 = nw_params_1_0;
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::NONE;
+        return nw_params_1_2;
     }
 
     IHostapd::NetworkParams getPskNwParams() {
-        IHostapd::NetworkParams nw_params;
-        nw_params.ssid =
-            std::vector<uint8_t>(kNwSsid, kNwSsid + sizeof(kNwSsid));
-        nw_params.isHidden = false;
-        nw_params.encryptionType = IHostapd::EncryptionType::WPA2;
-        nw_params.pskPassphrase = kNwPassphrase;
-        return nw_params;
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::WPA2;
+        nw_params_1_2.passphrase = kNwPassphrase;
+        return nw_params_1_2;
     }
 
     IHostapd::NetworkParams getInvalidPskNwParams() {
-        IHostapd::NetworkParams nw_params;
-        nw_params.ssid =
-            std::vector<uint8_t>(kNwSsid, kNwSsid + sizeof(kNwSsid));
-        nw_params.isHidden = false;
-        nw_params.encryptionType = IHostapd::EncryptionType::WPA2;
-        return nw_params;
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::WPA2;
+        nw_params_1_2.passphrase = kInvalidMaxPskNwPassphrase;
+
+        return nw_params_1_2;
+    }
+
+    IHostapd::NetworkParams getSaeTransitionNwParams() {
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType =
+            IHostapd::EncryptionType::WPA3_SAE_TRANSITION;
+        nw_params_1_2.passphrase = kNwPassphrase;
+        return nw_params_1_2;
+    }
+
+    IHostapd::NetworkParams getInvalidSaeTransitionNwParams() {
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::WPA2;
+        nw_params_1_2.passphrase = kInvalidMinPskNwPassphrase;
+        return nw_params_1_2;
+    }
+
+    IHostapd::NetworkParams getSaeNwParams() {
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::WPA3_SAE;
+        nw_params_1_2.passphrase = kNwPassphrase;
+        return nw_params_1_2;
+    }
+
+    IHostapd::NetworkParams getInvalidSaeNwParams() {
+        IHostapd::NetworkParams nw_params_1_2 = getOpenNwParams();
+        nw_params_1_2.encryptionType = IHostapd::EncryptionType::WPA3_SAE;
+        nw_params_1_2.passphrase = "";
+        return nw_params_1_2;
     }
 
     IHostapd::IfaceParams getIfaceParamsWithInvalidChannel() {
@@ -186,13 +215,13 @@ TEST_P(HostapdHidlTest, AddPskAccessPointWithAcs) {
 }
 
 /**
- * Adds an access point with PSK network config, ACS enabled & channel Range.
+ * Adds an access point with PSK network config, ACS enabled & frequency Range.
  * Access point creation should pass.
  */
-TEST_P(HostapdHidlTest, AddPskAccessPointWithAcsAndChannelRange) {
+TEST_P(HostapdHidlTest, AddPskAccessPointWithAcsAndFreqRange) {
     auto status =
         HIDL_INVOKE(hostapd_, addAccessPoint_1_2,
-                    getIfaceParamsWithAcsAndChannelRange(), getPskNwParams());
+                    getIfaceParamsWithAcsAndFreqRange(), getPskNwParams());
     // TODO: b/140172237, fix this in R
     // EXPECT_EQ(HostapdStatusCode::SUCCESS, status.code);
 }
@@ -201,9 +230,9 @@ TEST_P(HostapdHidlTest, AddPskAccessPointWithAcsAndChannelRange) {
  * Adds an access point with invalid channel range.
  * Access point creation should fail.
  */
-TEST_P(HostapdHidlTest, AddPskAccessPointWithAcsAndInvalidChannelRange) {
+TEST_P(HostapdHidlTest, AddPskAccessPointWithAcsAndInvalidFreqRange) {
     auto status = HIDL_INVOKE(hostapd_, addAccessPoint_1_2,
-                              getIfaceParamsWithAcsAndInvalidChannelRange(),
+                              getIfaceParamsWithAcsAndInvalidFreqRange(),
                               getPskNwParams());
     // TODO: b/140172237, fix this in R
     // EXPECT_NE(HostapdStatusCode::SUCCESS, status.code);
@@ -241,18 +270,40 @@ TEST_P(HostapdHidlTest, AddOpenAccessPointWithoutAcs) {
 }
 
 /**
+ * Adds an access point with SAE Transition network config & ACS disabled.
+ * Access point creation should pass.
+ */
+TEST_P(HostapdHidlTest, AddSaeTransitionAccessPointWithoutAcs) {
+    auto status =
+        HIDL_INVOKE(hostapd_, addAccessPoint_1_2, getIfaceParamsWithoutAcs(),
+                    getSaeTransitionNwParams());
+    EXPECT_EQ(HostapdStatusCode::SUCCESS, status.code);
+}
+
+/**
+ * Adds an access point with SAE network config & ACS disabled.
+ * Access point creation should pass.
+ */
+TEST_P(HostapdHidlTest, AddSAEAccessPointWithoutAcs) {
+    auto status = HIDL_INVOKE(hostapd_, addAccessPoint_1_2,
+                              getIfaceParamsWithoutAcs(), getSaeNwParams());
+    EXPECT_EQ(HostapdStatusCode::SUCCESS, status.code);
+}
+
+/**
  * Adds & then removes an access point with PSK network config & ACS enabled.
  * Access point creation & removal should pass.
  */
 TEST_P(HostapdHidlTest, RemoveAccessPointWithAcs) {
-    auto status = HIDL_INVOKE(hostapd_, addAccessPoint_1_2,
-                              getIfaceParamsWithAcs(), getPskNwParams());
+    auto status_1_2 = HIDL_INVOKE(hostapd_, addAccessPoint_1_2,
+                                  getIfaceParamsWithAcs(), getPskNwParams());
     // TODO: b/140172237, fix this in R
     /*
-    EXPECT_EQ(HostapdStatusCode::SUCCESS, status.code);
-    status =
+    EXPECT_EQ(HostapdStatusCode::SUCCESS, status_1_2.code);
+    auto status =
         HIDL_INVOKE(hostapd_, removeAccessPoint, getPrimaryWlanIfaceName());
-    EXPECT_EQ(HostapdStatusCode::SUCCESS, status.code);
+    EXPECT_EQ(android::hardware::wifi::hostapd::V1_0::HostapdStatusCode::SUCCESS,
+    status.code);
     */
 }
 
@@ -290,6 +341,28 @@ TEST_P(HostapdHidlTest, AddInvalidPskAccessPointWithoutAcs) {
     auto status =
         HIDL_INVOKE(hostapd_, addAccessPoint_1_2, getIfaceParamsWithoutAcs(),
                     getInvalidPskNwParams());
+    EXPECT_NE(HostapdStatusCode::SUCCESS, status.code);
+}
+
+/**
+ * Adds an access point with invalid SAE transition network config.
+ * Access point creation should fail.
+ */
+TEST_P(HostapdHidlTest, AddInvalidSaeTransitionAccessPointWithoutAcs) {
+    auto status =
+        HIDL_INVOKE(hostapd_, addAccessPoint_1_2, getIfaceParamsWithoutAcs(),
+                    getInvalidSaeTransitionNwParams());
+    EXPECT_NE(HostapdStatusCode::SUCCESS, status.code);
+}
+
+/**
+ * Adds an access point with invalid SAE network config.
+ * Access point creation should fail.
+ */
+TEST_P(HostapdHidlTest, AddInvalidSaeAccessPointWithoutAcs) {
+    auto status =
+        HIDL_INVOKE(hostapd_, addAccessPoint_1_2, getIfaceParamsWithoutAcs(),
+                    getInvalidSaeNwParams());
     EXPECT_NE(HostapdStatusCode::SUCCESS, status.code);
 }
 
