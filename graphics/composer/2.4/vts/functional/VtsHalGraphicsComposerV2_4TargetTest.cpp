@@ -17,6 +17,7 @@
 #define LOG_TAG "graphics_composer_hidl_hal_test@2.4"
 
 #include <algorithm>
+#include <regex>
 #include <thread>
 
 #include <android-base/logging.h>
@@ -40,6 +41,8 @@ namespace composer {
 namespace V2_4 {
 namespace vts {
 namespace {
+
+using namespace std::chrono_literals;
 
 using common::V1_0::BufferUsage;
 using common::V1_1::RenderIntent;
@@ -525,7 +528,7 @@ TEST_P(GraphicsComposerHidlTest, setAutoLowLatencyMode) {
             EXPECT_EQ(Error::UNSUPPORTED,
                       mComposerClient->setAutoLowLatencyMode(mPrimaryDisplay, false));
             GTEST_SUCCEED() << "Auto Low Latency Mode is not supported on display "
-                            << to_string(display) << ", skipping test";
+                            << std::to_string(display) << ", skipping test";
             return;
         }
 
@@ -579,7 +582,7 @@ void GraphicsComposerHidlTest::Test_setContentTypeForDisplay(
     if (!contentTypeSupport) {
         EXPECT_EQ(Error::UNSUPPORTED, mComposerClient->setContentType(display, contentType));
         GTEST_SUCCEED() << contentTypeStr << " content type is not supported on display "
-                        << to_string(display) << ", skipping test";
+                        << std::to_string(display) << ", skipping test";
         return;
     }
 
@@ -624,6 +627,28 @@ INSTANTIATE_TEST_SUITE_P(
         PerInstance, GraphicsComposerHidlCommandTest,
         testing::ValuesIn(android::hardware::getAllHalInstanceNames(IComposer::descriptor)),
         android::hardware::PrintInstanceNameToString);
+
+TEST_P(GraphicsComposerHidlCommandTest, getLayerGenericMetadataKeys) {
+    std::vector<IComposerClient::LayerGenericMetadataKey> keys;
+    mComposerClient->getLayerGenericMetadataKeys(&keys);
+
+    std::regex reverseDomainName("^[a-zA-Z-]{2,}(\\.[a-zA-Z0-9-]+)+$");
+    std::unordered_set<std::string> uniqueNames;
+    for (const auto& key : keys) {
+        std::string name(key.name.c_str());
+
+        // Keys must not start with 'android' or 'com.android'
+        ASSERT_FALSE(name.find("android") == 0);
+        ASSERT_FALSE(name.find("com.android") == 0);
+
+        // Keys must be in reverse domain name format
+        ASSERT_TRUE(std::regex_match(name, reverseDomainName));
+
+        // Keys must be unique within this list
+        const auto& [iter, inserted] = uniqueNames.insert(name);
+        ASSERT_TRUE(inserted);
+    }
+}
 
 }  // namespace
 }  // namespace vts

@@ -29,7 +29,7 @@ namespace rebootescrow {
 using ::android::base::unique_fd;
 
 ndk::ScopedAStatus RebootEscrow::storeKey(const std::vector<int8_t>& kek) {
-    int rawFd = TEMP_FAILURE_RETRY(::open(REBOOT_ESCROW_DEVICE, O_WRONLY | O_NOFOLLOW | O_CLOEXEC));
+    int rawFd = TEMP_FAILURE_RETRY(::open(devicePath_.c_str(), O_WRONLY | O_NOFOLLOW | O_CLOEXEC));
     unique_fd fd(rawFd);
     if (fd.get() < 0) {
         LOG(WARNING) << "Could not open reboot escrow device";
@@ -48,20 +48,19 @@ ndk::ScopedAStatus RebootEscrow::storeKey(const std::vector<int8_t>& kek) {
 }
 
 ndk::ScopedAStatus RebootEscrow::retrieveKey(std::vector<int8_t>* _aidl_return) {
-    int rawFd = TEMP_FAILURE_RETRY(::open(REBOOT_ESCROW_DEVICE, O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    int rawFd = TEMP_FAILURE_RETRY(::open(devicePath_.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
     unique_fd fd(rawFd);
     if (fd.get() < 0) {
         LOG(WARNING) << "Could not open reboot escrow device";
         return ndk::ScopedAStatus(AStatus_fromExceptionCode(EX_UNSUPPORTED_OPERATION));
     }
 
-    std::string encodedString;
-    if (!::android::base::ReadFdToString(fd, &encodedString)) {
-        LOG(WARNING) << "Could not read device to string";
+    std::vector<uint8_t> encodedBytes(hadamard::OUTPUT_SIZE_BYTES);
+    if (!::android::base::ReadFully(fd, &encodedBytes[0], encodedBytes.size())) {
+        LOG(WARNING) << "Could not read device";
         return ndk::ScopedAStatus(AStatus_fromExceptionCode(EX_UNSUPPORTED_OPERATION));
     }
 
-    std::vector<uint8_t> encodedBytes(encodedString.begin(), encodedString.end());
     auto keyBytes = hadamard::DecodeKey(encodedBytes);
 
     std::vector<int8_t> signedKeyBytes(keyBytes.begin(), keyBytes.end());

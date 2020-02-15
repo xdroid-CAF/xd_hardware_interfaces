@@ -573,6 +573,13 @@ class RadioResponse_v1_5 : public ::android::hardware::radio::V1_5::IRadioRespon
                     cellInfo);
 
     Return<void> setNetworkSelectionModeManualResponse_1_5(const RadioResponseInfo& info);
+
+    Return<void> sendCdmaSmsExpectMoreResponse(const RadioResponseInfo& info,
+                                               const SendSmsResult& sms);
+
+    Return<void> supplySimDepersonalizationResponse(
+            const RadioResponseInfo& info,
+            ::android::hardware::radio::V1_5::PersoSubstate persoType, int32_t remainingRetries);
 };
 
 /* Callback class for radio indication */

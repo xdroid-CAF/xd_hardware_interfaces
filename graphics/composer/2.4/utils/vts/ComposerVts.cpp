@@ -16,8 +16,6 @@
 
 #include <composer-vts/2.4/ComposerVts.h>
 
-#include <VtsHalHidlTargetTestBase.h>
-
 namespace android {
 namespace hardware {
 namespace graphics {
@@ -26,11 +24,6 @@ namespace V2_4 {
 namespace vts {
 
 using V2_4::Error;
-
-Composer::Composer() : Composer(::testing::VtsHalHidlTargetTestBase::getService<IComposer>()) {}
-
-Composer::Composer(const std::string& name)
-    : Composer(::testing::VtsHalHidlTargetTestBase::getService<IComposer>(name)) {}
 
 Composer::Composer(const sp<IComposer>& composer)
     : V2_3::vts::Composer(composer), mComposer(composer) {}
@@ -127,6 +120,16 @@ Error ComposerClient::getSupportedContentTypes(
 
 Error ComposerClient::setContentType(Display display, IComposerClient::ContentType contentType) {
     return mClient->setContentType(display, contentType);
+}
+
+Error ComposerClient::getLayerGenericMetadataKeys(
+        std::vector<IComposerClient::LayerGenericMetadataKey>* outKeys) {
+    Error error = Error::NONE;
+    mClient->getLayerGenericMetadataKeys([&](const auto tmpError, const auto& tmpKeys) {
+        error = tmpError;
+        *outKeys = tmpKeys;
+    });
+    return error;
 }
 
 }  // namespace vts
