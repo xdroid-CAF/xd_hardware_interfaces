@@ -19,6 +19,7 @@
 
 #include <android-base/logging.h>
 #include <cutils/properties.h>
+#include <net/if.h>
 
 #include "hidl_sync_util.h"
 #include "wifi_legacy_hal.h"
@@ -1355,6 +1356,7 @@ wifi_error WifiLegacyHal::retrieveIfaceHandles() {
         LOG(ERROR) << "Failed to enumerate interface handles";
         return status;
     }
+    iface_name_to_handle_.clear();
     for (int i = 0; i < num_iface_handles; ++i) {
         std::array<char, IFNAMSIZ> iface_name_arr = {};
         status = global_func_table_.wifi_get_iface_name(
@@ -1421,31 +1423,35 @@ WifiLegacyHal::getGscanCachedResults(const std::string& iface_name) {
     return {status, std::move(cached_scan_results)};
 }
 
-wifi_error WifiLegacyHal::QcAddInterface(const std::string& iface_name,
-                                         const std::string& new_ifname,
-                                         uint32_t type) {
-    wifi_error status = global_func_table_.wifi_add_or_remove_virtual_intf(
-                           getIfaceHandle(iface_name),
-                           new_ifname.c_str(), type, true);
-
-    if (status == WIFI_SUCCESS) {
-        // refresh list of handlers now.
-        iface_name_to_handle_.clear();
-        status = retrieveIfaceHandles();
-    }
-    return status;
+wifi_error WifiLegacyHal::createVirtualInterface(const std::string& ifname,
+                                                 wifi_interface_type iftype) {
+    // Create the interface if it doesn't exist. If interface already exist,
+    // Vendor Hal should return WIFI_SUCCESS.
+    wifi_error status = global_func_table_.wifi_virtual_interface_create(
+        global_handle_, ifname.c_str(), iftype);
+    return handleVirtualInterfaceCreateOrDeleteStatus(ifname, status);
 }
 
-wifi_error WifiLegacyHal::QcRemoveInterface(const std::string& iface_name,
-                                            const std::string& ifname) {
-    wifi_error status =  global_func_table_.wifi_add_or_remove_virtual_intf(
-                             getIfaceHandle(iface_name),
-                             ifname.c_str(), 0, false);
+wifi_error WifiLegacyHal::deleteVirtualInterface(const std::string& ifname) {
+    // Delete the interface if it was created dynamically.
+    wifi_error status = global_func_table_.wifi_virtual_interface_delete(
+        global_handle_, ifname.c_str());
+    return handleVirtualInterfaceCreateOrDeleteStatus(ifname, status);
+}
 
+wifi_error WifiLegacyHal::handleVirtualInterfaceCreateOrDeleteStatus(
+    const std::string& ifname, wifi_error status) {
     if (status == WIFI_SUCCESS) {
         // refresh list of handlers now.
-        iface_name_to_handle_.clear();
         status = retrieveIfaceHandles();
+    } else if (status == WIFI_ERROR_NOT_SUPPORTED) {
+        // Vendor hal does not implement this API. Such vendor implementations
+        // are expected to create / delete interface by other means.
+
+        // check if interface exists.
+        if (if_nametoindex(ifname.c_str())) {
+            status = retrieveIfaceHandles();
+        }
     }
     return status;
 }

@@ -641,7 +641,7 @@ void WifiChip::QcRemoveAndClearDynamicIfaces() {
     for (const auto& iface : created_ap_ifaces_) {
         std::string ifname = iface->getName();
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcRemoveInterface(getWlanIfaceName(0), ifname);
+            legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to remove interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
@@ -651,7 +651,7 @@ void WifiChip::QcRemoveAndClearDynamicIfaces() {
     for (const auto& iface : created_sta_ifaces_) {
         std::string ifname = iface->getName();
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcRemoveInterface(getWlanIfaceName(0), ifname);
+            legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to remove interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
@@ -831,8 +831,9 @@ std::pair<WifiStatus, sp<IWifiApIface>> WifiChip::createApIfaceInternal() {
     std::string ifname = allocateApIfaceName();
     if (!if_nametoindex(ifname.c_str())) {
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcAddInterface(getWlanIfaceName(0), ifname,
-                                               (uint32_t)IfaceType::AP);
+            legacy_hal_.lock()->createVirtualInterface(
+                ifname,
+                hidl_struct_util::convertHidlIfaceTypeToLegacy(IfaceType::AP));
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to add interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
@@ -882,7 +883,7 @@ WifiStatus WifiChip::removeApIfaceInternal(const std::string& ifname) {
     invalidateAndRemoveDependencies(ifname);
     if (findUsingName(created_ap_ifaces_, ifname) != nullptr) {
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcRemoveInterface(getWlanIfaceName(0), ifname);
+            legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to remove interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
@@ -1001,8 +1002,9 @@ WifiChip::createStaIfaceInternal() {
     std::string ifname = allocateStaIfaceName();
     if (!if_nametoindex(ifname.c_str())) {
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcAddInterface(getWlanIfaceName(0), ifname,
-                                               (uint32_t)IfaceType::STA);
+            legacy_hal_.lock()->createVirtualInterface(
+                ifname,
+                hidl_struct_util::convertHidlIfaceTypeToLegacy(IfaceType::STA));
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to add interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
@@ -1048,7 +1050,7 @@ WifiStatus WifiChip::removeStaIfaceInternal(const std::string& ifname) {
     invalidateAndRemoveDependencies(ifname);
     if (findUsingName(created_sta_ifaces_, ifname) != nullptr) {
         legacy_hal::wifi_error legacy_status =
-            legacy_hal_.lock()->QcRemoveInterface(getWlanIfaceName(0), ifname);
+            legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
             LOG(ERROR) << "Failed to remove interface: " << ifname << " "
                        << legacyErrorToString(legacy_status);
