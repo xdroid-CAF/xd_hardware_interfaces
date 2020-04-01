@@ -534,6 +534,10 @@ void WifiNanIface::invalidate() {
     event_cb_handler_.invalidate();
     event_cb_handler_1_2_.invalidate();
     is_valid_ = false;
+    if (!strcmp(ifname_.c_str(), kAwareIfaceName)) {
+       if (!iface_util_.lock()->SetUpState(ifname_.c_str(), false))
+           LOG(ERROR) << "Failed to set NAN interface down";
+    }
 }
 
 bool WifiNanIface::isValid() { return is_valid_; }
