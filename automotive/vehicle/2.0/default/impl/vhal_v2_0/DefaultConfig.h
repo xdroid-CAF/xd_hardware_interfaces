@@ -17,8 +17,10 @@
 #ifndef android_hardware_automotive_vehicle_V2_0_impl_DefaultConfig_H_
 #define android_hardware_automotive_vehicle_V2_0_impl_DefaultConfig_H_
 
-#include <android/hardware/automotive/vehicle/2.0/IVehicle.h>
+#include <android/hardware/automotive/vehicle/2.0/types.h>
 #include <vhal_v2_0/VehicleUtils.h>
+
+#include <map>
 
 namespace android {
 namespace hardware {
@@ -70,6 +72,7 @@ constexpr int VENDOR_EXTENSION_STRING_PROPERTY =
     (int)(0x104 | VehiclePropertyGroup::VENDOR | VehiclePropertyType::STRING | VehicleArea::GLOBAL);
 constexpr int FUEL_DOOR_REAR_LEFT = (int)PortLocationType::REAR_LEFT;
 constexpr int CHARGE_PORT_FRONT_LEFT = (int)PortLocationType::FRONT_LEFT;
+constexpr int CHARGE_PORT_REAR_LEFT = (int)PortLocationType::REAR_LEFT;
 constexpr int LIGHT_STATE_ON = (int)VehicleLightState::ON;
 constexpr int LIGHT_SWITCH_AUTO = (int)VehicleLightSwitch::AUTOMATIC;
 constexpr int WHEEL_FRONT_LEFT = (int)VehicleAreaWheel::LEFT_FRONT;
@@ -246,6 +249,14 @@ const ConfigDeclaration kVehicleProperties[]{
                          .changeMode = VehiclePropertyChangeMode::STATIC,
                  },
          .initialValue = {.int32Values = {CHARGE_PORT_FRONT_LEFT}}},
+
+        {.config =
+                 {
+                         .prop = toInt(VehicleProperty::INFO_MULTI_EV_PORT_LOCATIONS),
+                         .access = VehiclePropertyAccess::READ,
+                         .changeMode = VehiclePropertyChangeMode::STATIC,
+                 },
+         .initialValue = {.int32Values = {CHARGE_PORT_FRONT_LEFT, CHARGE_PORT_REAR_LEFT}}},
 
         {.config =
                  {
@@ -1008,7 +1019,6 @@ const ConfigDeclaration kVehicleProperties[]{
                                 .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
                         },
         },
-
 };
 
 }  // impl

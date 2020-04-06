@@ -221,7 +221,7 @@ class GraphicsMapperHidlTest
                     case PlaneLayoutComponentType::Y:
                         ASSERT_EQ(nullptr, outYCbCr->y);
                         ASSERT_EQ(8, planeLayoutComponent.sizeInBits);
-                        ASSERT_EQ(8, planeLayout.sampleIncrementInBits);
+                        ASSERT_EQ(32, planeLayout.sampleIncrementInBits);
                         outYCbCr->y = tmpData;
                         outYCbCr->ystride = planeLayout.strideInBytes;
                         break;
@@ -277,6 +277,8 @@ class GraphicsMapperHidlTest
             data += strideInBytes;
         }
     }
+
+    bool isEqual(float a, float b) { return abs(a - b) < 0.0001; }
 
     std::unique_ptr<Gralloc> mGralloc;
     IMapper::BufferDescriptorInfo mDummyDescriptorInfo{};
@@ -725,8 +727,10 @@ TEST_P(GraphicsMapperHidlTest, FlushRereadBasic) {
 
     int fence;
     ASSERT_NO_FATAL_FAILURE(fence = mGralloc->flushLockedBuffer(writeBufferHandle));
-    ASSERT_EQ(0, sync_wait(fence, 3500));
-    close(fence);
+    if (fence >= 0) {
+        ASSERT_EQ(0, sync_wait(fence, 3500));
+        close(fence);
+    }
 
     ASSERT_NO_FATAL_FAILURE(mGralloc->rereadLockedBuffer(readBufferHandle));
 
@@ -1455,17 +1459,17 @@ TEST_P(GraphicsMapperHidlTest, SetSmpte2086) {
      *  red             0.680   0.320
      *  white (D65)     0.3127  0.3290
      */
-    std::optional<Smpte2086> smpte2086;
-    smpte2086->primaryRed.x = 0.680;
-    smpte2086->primaryRed.y = 0.320;
-    smpte2086->primaryGreen.x = 0.265;
-    smpte2086->primaryGreen.y = 0.690;
-    smpte2086->primaryBlue.x = 0.150;
-    smpte2086->primaryBlue.y = 0.060;
-    smpte2086->whitePoint.x = 0.3127;
-    smpte2086->whitePoint.y = 0.3290;
-    smpte2086->maxLuminance = 100.0;
-    smpte2086->minLuminance = 0.1;
+    Smpte2086 smpte2086;
+    smpte2086.primaryRed.x = 0.680;
+    smpte2086.primaryRed.y = 0.320;
+    smpte2086.primaryGreen.x = 0.265;
+    smpte2086.primaryGreen.y = 0.690;
+    smpte2086.primaryBlue.x = 0.150;
+    smpte2086.primaryBlue.y = 0.060;
+    smpte2086.whitePoint.x = 0.3127;
+    smpte2086.whitePoint.y = 0.3290;
+    smpte2086.maxLuminance = 100.0;
+    smpte2086.minLuminance = 0.1;
 
     hidl_vec<uint8_t> vec;
     ASSERT_EQ(NO_ERROR, gralloc4::encodeSmpte2086(smpte2086, &vec));
@@ -1475,16 +1479,16 @@ TEST_P(GraphicsMapperHidlTest, SetSmpte2086) {
                 std::optional<Smpte2086> realSmpte2086;
                 ASSERT_EQ(NO_ERROR, gralloc4::decodeSmpte2086(vec, &realSmpte2086));
                 ASSERT_TRUE(realSmpte2086.has_value());
-                EXPECT_EQ(smpte2086->primaryRed.x, realSmpte2086->primaryRed.x);
-                EXPECT_EQ(smpte2086->primaryRed.y, realSmpte2086->primaryRed.y);
-                EXPECT_EQ(smpte2086->primaryGreen.x, realSmpte2086->primaryGreen.x);
-                EXPECT_EQ(smpte2086->primaryGreen.y, realSmpte2086->primaryGreen.y);
-                EXPECT_EQ(smpte2086->primaryBlue.x, realSmpte2086->primaryBlue.x);
-                EXPECT_EQ(smpte2086->primaryBlue.y, realSmpte2086->primaryBlue.y);
-                EXPECT_EQ(smpte2086->whitePoint.x, realSmpte2086->whitePoint.x);
-                EXPECT_EQ(smpte2086->whitePoint.y, realSmpte2086->whitePoint.y);
-                EXPECT_EQ(smpte2086->maxLuminance, realSmpte2086->maxLuminance);
-                EXPECT_EQ(smpte2086->minLuminance, realSmpte2086->minLuminance);
+                EXPECT_TRUE(isEqual(smpte2086.primaryRed.x, realSmpte2086->primaryRed.x));
+                EXPECT_TRUE(isEqual(smpte2086.primaryRed.y, realSmpte2086->primaryRed.y));
+                EXPECT_TRUE(isEqual(smpte2086.primaryGreen.x, realSmpte2086->primaryGreen.x));
+                EXPECT_TRUE(isEqual(smpte2086.primaryGreen.y, realSmpte2086->primaryGreen.y));
+                EXPECT_TRUE(isEqual(smpte2086.primaryBlue.x, realSmpte2086->primaryBlue.x));
+                EXPECT_TRUE(isEqual(smpte2086.primaryBlue.y, realSmpte2086->primaryBlue.y));
+                EXPECT_TRUE(isEqual(smpte2086.whitePoint.x, realSmpte2086->whitePoint.x));
+                EXPECT_TRUE(isEqual(smpte2086.whitePoint.y, realSmpte2086->whitePoint.y));
+                EXPECT_TRUE(isEqual(smpte2086.maxLuminance, realSmpte2086->maxLuminance));
+                EXPECT_TRUE(isEqual(smpte2086.minLuminance, realSmpte2086->minLuminance));
             });
 }
 
@@ -1492,9 +1496,9 @@ TEST_P(GraphicsMapperHidlTest, SetSmpte2086) {
  * Test IMapper::set(Cta8613)
  */
 TEST_P(GraphicsMapperHidlTest, SetCta861_3) {
-    std::optional<Cta861_3> cta861_3;
-    cta861_3->maxContentLightLevel = 78.0;
-    cta861_3->maxFrameAverageLightLevel = 62.0;
+    Cta861_3 cta861_3;
+    cta861_3.maxContentLightLevel = 78.0;
+    cta861_3.maxFrameAverageLightLevel = 62.0;
 
     hidl_vec<uint8_t> vec;
     ASSERT_EQ(NO_ERROR, gralloc4::encodeCta861_3(cta861_3, &vec));
@@ -1504,9 +1508,10 @@ TEST_P(GraphicsMapperHidlTest, SetCta861_3) {
                 std::optional<Cta861_3> realCta861_3;
                 ASSERT_EQ(NO_ERROR, gralloc4::decodeCta861_3(vec, &realCta861_3));
                 ASSERT_TRUE(realCta861_3.has_value());
-                EXPECT_EQ(cta861_3->maxContentLightLevel, realCta861_3->maxContentLightLevel);
-                EXPECT_EQ(cta861_3->maxFrameAverageLightLevel,
-                          realCta861_3->maxFrameAverageLightLevel);
+                EXPECT_TRUE(
+                        isEqual(cta861_3.maxContentLightLevel, realCta861_3->maxContentLightLevel));
+                EXPECT_TRUE(isEqual(cta861_3.maxFrameAverageLightLevel,
+                                    realCta861_3->maxFrameAverageLightLevel));
             });
 }
 
@@ -1990,7 +1995,7 @@ TEST_P(GraphicsMapperHidlTest, ListSupportedMetadataTypes) {
         const auto& metadataType = description.metadataType;
 
         if (!gralloc4::isStandardMetadataType(metadataType)) {
-            EXPECT_GT(0, description.description.size());
+            EXPECT_GT(description.description.size(), 0);
             continue;
         }
 
@@ -2074,7 +2079,7 @@ TEST_P(GraphicsMapperHidlTest, GetReservedRegion) {
     auto info = mDummyDescriptorInfo;
 
     const int pageSize = getpagesize();
-    ASSERT_GE(0, pageSize);
+    ASSERT_GE(pageSize, 0);
     std::vector<uint64_t> requestedReservedSizes{1, 10, 333, static_cast<uint64_t>(pageSize) / 2,
                                                  static_cast<uint64_t>(pageSize)};
 
@@ -2106,7 +2111,7 @@ TEST_P(GraphicsMapperHidlTest, GetLargeReservedRegion) {
     auto info = mDummyDescriptorInfo;
 
     const int pageSize = getpagesize();
-    ASSERT_GE(0, pageSize);
+    ASSERT_GE(pageSize, 0);
     std::vector<uint64_t> requestedReservedSizes{static_cast<uint64_t>(pageSize) * 2,
                                                  static_cast<uint64_t>(pageSize) * 10,
                                                  static_cast<uint64_t>(pageSize) * 1000};
@@ -2119,8 +2124,14 @@ TEST_P(GraphicsMapperHidlTest, GetLargeReservedRegion) {
 
         Error err;
         mGralloc->getAllocator()->allocate(
-                descriptor, 1,
-                [&](const auto& tmpError, const auto&, const auto&) { err = tmpError; });
+                descriptor, 1, [&](const auto& tmpError, const auto&, const auto& tmpBuffers) {
+                    err = tmpError;
+                    if (err == Error::NONE) {
+                        ASSERT_EQ(1, tmpBuffers.size());
+                        ASSERT_NO_FATAL_FAILURE(bufferHandle =
+                                                        mGralloc->importBuffer(tmpBuffers[0]));
+                    }
+                });
         if (err == Error::UNSUPPORTED) {
             continue;
         }
@@ -2144,7 +2155,7 @@ TEST_P(GraphicsMapperHidlTest, GetReservedRegionMultiple) {
     auto info = mDummyDescriptorInfo;
 
     const int pageSize = getpagesize();
-    ASSERT_GE(0, pageSize);
+    ASSERT_GE(pageSize, 0);
     info.reservedSize = pageSize;
 
     ASSERT_NO_FATAL_FAILURE(bufferHandle = mGralloc->allocate(info, true));
