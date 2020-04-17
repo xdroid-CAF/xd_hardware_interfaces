@@ -123,10 +123,9 @@ std::array<uint8_t, 6> WifiIfaceUtil::createRandomMacAddress() {
     return address;
 }
 
-bool WifiIfaceUtil::SetUpState(const std::string& iface_name, bool request_up) {
-    LOG(ERROR) << "SetUpState " << request_up << " " << iface_name.c_str();
+bool WifiIfaceUtil::setUpState(const std::string& iface_name, bool request_up) {
     if (!iface_tool_.lock()->SetUpState(iface_name.c_str(), request_up)) {
-        LOG(ERROR) << "SetUpState failed";
+        LOG(ERROR) << "SetUpState to " << request_up << " failed";
         return false;
     }
     return true;
