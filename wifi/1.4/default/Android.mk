@@ -164,6 +164,11 @@ LOCAL_SRC_FILES := \
 LOCAL_STATIC_LIBRARIES := \
     libgmock \
     libgtest \
+    android.hardware.wifi@1.0 \
+    android.hardware.wifi@1.1 \
+    android.hardware.wifi@1.2 \
+    android.hardware.wifi@1.3 \
+    android.hardware.wifi@1.4 \
     android.hardware.wifi@1.0-service-lib
 LOCAL_SHARED_LIBRARIES := \
     libbase \
@@ -173,10 +178,5 @@ LOCAL_SHARED_LIBRARIES := \
     libnl \
     libutils \
     libwifi-hal \
-    libwifi-system-iface \
-    android.hardware.wifi@1.0 \
-    android.hardware.wifi@1.1 \
-    android.hardware.wifi@1.2 \
-    android.hardware.wifi@1.3 \
-    android.hardware.wifi@1.4
+    libwifi-system-iface
 include $(BUILD_NATIVE_TEST)
