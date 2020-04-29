@@ -25,6 +25,10 @@
 #include "wifi_iface_util.h"
 #include "wifi_legacy_hal.h"
 
+namespace {
+constexpr char kAwareIfaceName[] = "wifi-aware0";
+}
+
 namespace android {
 namespace hardware {
 namespace wifi {
