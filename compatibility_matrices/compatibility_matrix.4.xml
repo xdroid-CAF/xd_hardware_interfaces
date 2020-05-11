@@ -499,6 +499,7 @@
         <interface>
             <name>IHostapd</name>
             <instance>default</instance>
+            <instance>wigighostapd</instance>
         </interface>
     </hal>
     <hal format="hidl" optional="true">
