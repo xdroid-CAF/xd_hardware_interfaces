@@ -14,43 +14,23 @@
  * limitations under the License.
  */
 
-#include <android-base/logging.h>
-#include <android/hardware/tv/tuner/1.0/IDemux.h>
-#include <android/hardware/tv/tuner/1.0/IDescrambler.h>
-#include <android/hardware/tv/tuner/1.0/IDvr.h>
-#include <android/hardware/tv/tuner/1.0/IDvrCallback.h>
-#include <android/hardware/tv/tuner/1.0/IFilter.h>
-#include <android/hardware/tv/tuner/1.0/IFilterCallback.h>
-#include <android/hardware/tv/tuner/1.0/IFrontend.h>
-#include <android/hardware/tv/tuner/1.0/IFrontendCallback.h>
-#include <android/hardware/tv/tuner/1.0/ITuner.h>
 #include <android/hardware/tv/tuner/1.0/types.h>
 #include <binder/MemoryDealer.h>
-#include <fmq/MessageQueue.h>
 #include <hidl/HidlSupport.h>
 #include <hidl/HidlTransportSupport.h>
 #include <hidl/Status.h>
 #include <hidlmemory/FrameworkUtils.h>
-#include <utils/Condition.h>
-#include <utils/Mutex.h>
-#include <fstream>
-#include <iostream>
-#include <map>
 
+using android::hardware::tv::tuner::V1_0::DataFormat;
 using android::hardware::tv::tuner::V1_0::DemuxFilterEvent;
 using android::hardware::tv::tuner::V1_0::DemuxFilterMainType;
-using android::hardware::tv::tuner::V1_0::DemuxFilterPesDataSettings;
-using android::hardware::tv::tuner::V1_0::DemuxFilterPesEvent;
-using android::hardware::tv::tuner::V1_0::DemuxFilterRecordSettings;
-using android::hardware::tv::tuner::V1_0::DemuxFilterSectionEvent;
-using android::hardware::tv::tuner::V1_0::DemuxFilterSectionSettings;
 using android::hardware::tv::tuner::V1_0::DemuxFilterSettings;
-using android::hardware::tv::tuner::V1_0::DemuxFilterStatus;
 using android::hardware::tv::tuner::V1_0::DemuxFilterType;
-using android::hardware::tv::tuner::V1_0::DemuxQueueNotifyBits;
+using android::hardware::tv::tuner::V1_0::DemuxRecordScIndexType;
 using android::hardware::tv::tuner::V1_0::DemuxTpid;
-using android::hardware::tv::tuner::V1_0::DemuxTsFilterSettings;
 using android::hardware::tv::tuner::V1_0::DemuxTsFilterType;
+using android::hardware::tv::tuner::V1_0::DvrSettings;
+using android::hardware::tv::tuner::V1_0::DvrType;
 using android::hardware::tv::tuner::V1_0::FrontendDvbtBandwidth;
 using android::hardware::tv::tuner::V1_0::FrontendDvbtCoderate;
 using android::hardware::tv::tuner::V1_0::FrontendDvbtConstellation;
@@ -61,17 +41,48 @@ using android::hardware::tv::tuner::V1_0::FrontendDvbtStandard;
 using android::hardware::tv::tuner::V1_0::FrontendDvbtTransmissionMode;
 using android::hardware::tv::tuner::V1_0::FrontendSettings;
 using android::hardware::tv::tuner::V1_0::FrontendType;
+using android::hardware::tv::tuner::V1_0::PlaybackSettings;
+using android::hardware::tv::tuner::V1_0::RecordSettings;
 
-namespace {
+using namespace std;
 
-#define frontend_transponders_count 2
-#define channels_count 1
-#define frontend_scan_count 1
-#define filter_count 2
+const uint32_t FMQ_SIZE_1M = 0x100000;
+const uint32_t FMQ_SIZE_4M = 0x400000;
+const uint32_t FMQ_SIZE_16M = 0x1000000;
+
+typedef enum {
+    TS_VIDEO0,
+    TS_VIDEO1,
+    TS_AUDIO0,
+    TS_PES0,
+    TS_PCR0,
+    TS_SECTION0,
+    TS_TS0,
+    TS_RECORD0,
+    FILTER_MAX,
+} Filter;
+
+typedef enum {
+    DVBT,
+    DVBS,
+    FRONTEND_MAX,
+} Frontend;
+
+typedef enum {
+    SCAN_DVBT,
+    SCAN_MAX,
+} FrontendScan;
+
+typedef enum {
+    DVR_RECORD0,
+    DVR_PLAYBACK0,
+    DVR_MAX,
+} Dvr;
 
 struct FilterConfig {
+    uint32_t bufferSize;
     DemuxFilterType type;
-    DemuxFilterSettings setting;
+    DemuxFilterSettings settings;
 };
 
 struct FrontendConfig {
@@ -87,10 +98,18 @@ struct ChannelConfig {
     DemuxTpid audioPid;
 };
 
-static FrontendConfig frontendArray[frontend_transponders_count];
-static FrontendConfig frontendScanArray[channels_count];
-static ChannelConfig channelArray[frontend_scan_count];
-static FilterConfig filterArray[filter_count];
+struct DvrConfig {
+    DvrType type;
+    uint32_t bufferSize;
+    DvrSettings settings;
+    string playbackInputFile;
+};
+
+static FrontendConfig frontendArray[FILTER_MAX];
+static FrontendConfig frontendScanArray[SCAN_MAX];
+static ChannelConfig channelArray[FRONTEND_MAX];
+static FilterConfig filterArray[FILTER_MAX];
+static DvrConfig dvrArray[DVR_MAX];
 static vector<string> goldenOutputFiles;
 
 /** Configuration array for the frontend tune test */
@@ -107,14 +126,14 @@ inline void initFrontendConfig() {
             .isHighPriority = true,
             .standard = FrontendDvbtStandard::T,
     };
-    frontendArray[0].type = FrontendType::DVBT, frontendArray[0].settings.dvbt(dvbtSettings);
-    frontendArray[1].type = FrontendType::DVBS;
+    frontendArray[DVBT].type = FrontendType::DVBT, frontendArray[DVBT].settings.dvbt(dvbtSettings);
+    frontendArray[DVBS].type = FrontendType::DVBS;
 };
 
 /** Configuration array for the frontend scan test */
 inline void initFrontendScanConfig() {
-    frontendScanArray[0].type = FrontendType::DVBT;
-    frontendScanArray[0].settings.dvbt({
+    frontendScanArray[SCAN_DVBT].type = FrontendType::DVBT;
+    frontendScanArray[SCAN_DVBT].settings.dvbt({
             .frequency = 578000,
             .transmissionMode = FrontendDvbtTransmissionMode::MODE_8K,
             .bandwidth = FrontendDvbtBandwidth::BANDWIDTH_8MHZ,
@@ -130,19 +149,82 @@ inline void initFrontendScanConfig() {
 
 /** Configuration array for the filter test */
 inline void initFilterConfig() {
-    // TS Video filter setting
-    filterArray[0].type.mainType = DemuxFilterMainType::TS;
-    filterArray[0].type.subType.tsFilterType(DemuxTsFilterType::VIDEO);
-    filterArray[0].setting.ts().tpid = 119;
-    filterArray[0].setting.ts().filterSettings.av({.isPassthrough = false});
+    // TS VIDEO filter setting for default implementation testing
+    filterArray[TS_VIDEO0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_VIDEO0].type.subType.tsFilterType(DemuxTsFilterType::VIDEO);
+    filterArray[TS_VIDEO0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_VIDEO0].settings.ts().tpid = 256;
+    filterArray[TS_VIDEO0].settings.ts().filterSettings.av({.isPassthrough = false});
+    filterArray[TS_VIDEO1].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_VIDEO1].type.subType.tsFilterType(DemuxTsFilterType::VIDEO);
+    filterArray[TS_VIDEO1].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_VIDEO1].settings.ts().tpid = 256;
+    filterArray[TS_VIDEO1].settings.ts().filterSettings.av({.isPassthrough = false});
+    // TS AUDIO filter setting
+    filterArray[TS_AUDIO0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_AUDIO0].type.subType.tsFilterType(DemuxTsFilterType::AUDIO);
+    filterArray[TS_AUDIO0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_AUDIO0].settings.ts().tpid = 256;
+    filterArray[TS_AUDIO0].settings.ts().filterSettings.av({.isPassthrough = false});
     // TS PES filter setting
-    filterArray[1].type.mainType = DemuxFilterMainType::TS;
-    filterArray[1].type.subType.tsFilterType(DemuxTsFilterType::PES);
-    filterArray[1].setting.ts().tpid = 256;
-    filterArray[1].setting.ts().filterSettings.pesData({
-            .isRaw = true,
+    filterArray[TS_PES0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_PES0].type.subType.tsFilterType(DemuxTsFilterType::PES);
+    filterArray[TS_PES0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_PES0].settings.ts().tpid = 256;
+    filterArray[TS_PES0].settings.ts().filterSettings.pesData({
+            .isRaw = false,
             .streamId = 0xbd,
+    });
+    // TS PCR filter setting
+    filterArray[TS_PCR0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_PCR0].type.subType.tsFilterType(DemuxTsFilterType::PCR);
+    filterArray[TS_PCR0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_PCR0].settings.ts().tpid = 256;
+    filterArray[TS_PCR0].settings.ts().filterSettings.noinit();
+    // TS filter setting
+    filterArray[TS_TS0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_TS0].type.subType.tsFilterType(DemuxTsFilterType::TS);
+    filterArray[TS_TS0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_TS0].settings.ts().tpid = 256;
+    filterArray[TS_TS0].settings.ts().filterSettings.noinit();
+    // TS SECTION filter setting
+    filterArray[TS_SECTION0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_SECTION0].type.subType.tsFilterType(DemuxTsFilterType::SECTION);
+    filterArray[TS_SECTION0].bufferSize = FMQ_SIZE_16M;
+    filterArray[TS_SECTION0].settings.ts().tpid = 256;
+    filterArray[TS_SECTION0].settings.ts().filterSettings.section({
+            .isRaw = false,
+    });
+    // TS RECORD filter setting
+    filterArray[TS_RECORD0].type.mainType = DemuxFilterMainType::TS;
+    filterArray[TS_RECORD0].type.subType.tsFilterType(DemuxTsFilterType::RECORD);
+    filterArray[TS_RECORD0].settings.ts().tpid = 81;
+    filterArray[TS_RECORD0].settings.ts().filterSettings.record({
+            .scIndexType = DemuxRecordScIndexType::NONE,
     });
 };
 
-}  // namespace
+/** Configuration array for the dvr test */
+inline void initDvrConfig() {
+    RecordSettings recordSettings{
+            .statusMask = 0xf,
+            .lowThreshold = 0x1000,
+            .highThreshold = 0x07fff,
+            .dataFormat = DataFormat::TS,
+            .packetSize = 188,
+    };
+    dvrArray[DVR_RECORD0].type = DvrType::RECORD;
+    dvrArray[DVR_RECORD0].bufferSize = FMQ_SIZE_4M;
+    dvrArray[DVR_RECORD0].settings.record(recordSettings);
+    PlaybackSettings playbackSettings{
+            .statusMask = 0xf,
+            .lowThreshold = 0x1000,
+            .highThreshold = 0x07fff,
+            .dataFormat = DataFormat::TS,
+            .packetSize = 188,
+    };
+    dvrArray[DVR_PLAYBACK0].type = DvrType::PLAYBACK;
+    dvrArray[DVR_PLAYBACK0].playbackInputFile = "/vendor/etc/segment000000.ts";
+    dvrArray[DVR_PLAYBACK0].bufferSize = FMQ_SIZE_4M;
+    dvrArray[DVR_PLAYBACK0].settings.playback(playbackSettings);
+};

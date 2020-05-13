@@ -252,8 +252,6 @@ class WifiLegacyHal {
         const std::array<uint8_t, 6>& dst_address, uint32_t period_in_ms);
     wifi_error stopSendingOffloadedPacket(const std::string& iface_name,
                                           uint32_t cmd_id);
-    wifi_error setScanningMacOui(const std::string& iface_name,
-                                 const std::array<uint8_t, 3>& oui);
     virtual wifi_error selectTxPowerScenario(const std::string& iface_name,
                                              wifi_power_scenario scenario);
     virtual wifi_error resetTxPowerScenario(const std::string& iface_name);
@@ -373,9 +371,9 @@ class WifiLegacyHal {
                               std::array<int8_t, 2> code);
 
     // interface functions.
-    wifi_error createVirtualInterface(const std::string& ifname,
-                                      wifi_interface_type iftype);
-    wifi_error deleteVirtualInterface(const std::string& ifname);
+    virtual wifi_error createVirtualInterface(const std::string& ifname,
+                                              wifi_interface_type iftype);
+    virtual wifi_error deleteVirtualInterface(const std::string& ifname);
 
    private:
     // Retrieve interface handles for all the available interfaces.

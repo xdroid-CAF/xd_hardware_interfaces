@@ -25,10 +25,6 @@
 #include "wifi_iface_util.h"
 #include "wifi_legacy_hal.h"
 
-namespace {
-constexpr char kAwareIfaceName[] = "wifi-aware0";
-}
-
 namespace android {
 namespace hardware {
 namespace wifi {
@@ -42,7 +38,7 @@ using namespace android::hardware::wifi::V1_2;
  */
 class WifiNanIface : public V1_4::IWifiNanIface {
    public:
-    WifiNanIface(const std::string& ifname,
+    WifiNanIface(const std::string& ifname, bool is_dedicated_iface,
                  const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
                  const std::weak_ptr<iface_util::WifiIfaceUtil> iface_util);
     // Refer to |WifiChip::invalidate()|.
@@ -169,6 +165,7 @@ class WifiNanIface : public V1_4::IWifiNanIface {
     std::set<sp<V1_2::IWifiNanIfaceEventCallback>> getEventCallbacks_1_2();
 
     std::string ifname_;
+    bool is_dedicated_iface_;
     std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal_;
     std::weak_ptr<iface_util::WifiIfaceUtil> iface_util_;
     bool is_valid_;

@@ -36,6 +36,9 @@ endif
 ifdef WIFI_HIDL_FEATURE_DISABLE_AP_MAC_RANDOMIZATION
 LOCAL_CPPFLAGS += -DWIFI_HIDL_FEATURE_DISABLE_AP_MAC_RANDOMIZATION
 endif
+ifdef WIFI_AVOID_IFACE_RESET_MAC_CHANGE
+LOCAL_CPPFLAGS += -DWIFI_AVOID_IFACE_RESET_MAC_CHANGE
+endif
 ifdef QC_WIFI_HIDL_FEATURE_DUAL_AP
 LOCAL_CPPFLAGS += -DQC_WIFI_HIDL_FEATURE_DUAL_AP
 endif
@@ -164,6 +167,11 @@ LOCAL_SRC_FILES := \
 LOCAL_STATIC_LIBRARIES := \
     libgmock \
     libgtest \
+    android.hardware.wifi@1.0 \
+    android.hardware.wifi@1.1 \
+    android.hardware.wifi@1.2 \
+    android.hardware.wifi@1.3 \
+    android.hardware.wifi@1.4 \
     android.hardware.wifi@1.0-service-lib
 LOCAL_SHARED_LIBRARIES := \
     libbase \
@@ -173,10 +181,5 @@ LOCAL_SHARED_LIBRARIES := \
     libnl \
     libutils \
     libwifi-hal \
-    libwifi-system-iface \
-    android.hardware.wifi@1.0 \
-    android.hardware.wifi@1.1 \
-    android.hardware.wifi@1.2 \
-    android.hardware.wifi@1.3 \
-    android.hardware.wifi@1.4
+    libwifi-system-iface
 include $(BUILD_NATIVE_TEST)

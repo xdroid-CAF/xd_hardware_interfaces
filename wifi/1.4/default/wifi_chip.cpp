@@ -102,9 +102,28 @@ std::string getWlanIfaceName(unsigned idx) {
     return "wlan" + std::to_string(idx);
 }
 
+// Returns the dedicated iface name if one is defined.
+std::string getApIfaceName() {
+    std::array<char, PROPERTY_VALUE_MAX> buffer;
+    if (property_get("ro.vendor.wifi.sap.interface", buffer.data(), nullptr) ==
+        0) {
+        return {};
+    }
+    return buffer.data();
+}
+
 std::string getP2pIfaceName() {
     std::array<char, PROPERTY_VALUE_MAX> buffer;
     property_get("wifi.direct.interface", buffer.data(), "p2p0");
+    return buffer.data();
+}
+
+// Returns the dedicated iface name if one is defined.
+std::string getNanIfaceName() {
+    std::array<char, PROPERTY_VALUE_MAX> buffer;
+    if (property_get("wifi.aware.interface", buffer.data(), nullptr) == 0) {
+        return {};
+    }
     return buffer.data();
 }
 
@@ -904,17 +923,16 @@ std::pair<WifiStatus, sp<IWifiNanIface>> WifiChip::createNanIfaceInternal() {
     if (!canCurrentModeSupportIfaceOfTypeWithCurrentIfaces(IfaceType::NAN)) {
         return {createWifiStatus(WifiStatusCode::ERROR_NOT_AVAILABLE), {}};
     }
-    std::string ifname = kAwareIfaceName;
-    if (if_nametoindex(ifname.c_str())) {
-        if(!iface_util_.lock()->SetUpState(ifname.c_str(), true))
-           LOG(ERROR) << "Failed to set NAN interface UP " ;
-        else
-           LOG(INFO) << ifname.c_str() << " NAN interface is up";
-    } else {
+    bool is_dedicated_iface = true;
+    std::string ifname = getNanIfaceName();
+    if (ifname.empty()) {
+        // Use the first shared STA iface (wlan0) if a dedicated aware iface is
+        // not defined.
         ifname = getFirstActiveWlanIfaceName();
-        LOG(INFO) << ifname.c_str() << " use as NAN interface";
+        is_dedicated_iface = false;
     }
-    sp<WifiNanIface> iface = new WifiNanIface(ifname, legacy_hal_, iface_util_);
+    sp<WifiNanIface> iface =
+        new WifiNanIface(ifname, is_dedicated_iface, legacy_hal_, iface_util_);
     nan_ifaces_.push_back(iface);
     for (const auto& callback : event_cb_handler_.getCallbacks()) {
         if (!callback->onIfaceAdded(IfaceType::NAN, ifname).isOk()) {
@@ -1354,13 +1372,18 @@ WifiStatus WifiChip::registerDebugRingBufferCallback() {
                 LOG(ERROR) << "Error converting ring buffer status";
                 return;
             }
-            const auto& target = shared_ptr_this->ringbuffer_map_.find(name);
-            if (target != shared_ptr_this->ringbuffer_map_.end()) {
-                Ringbuffer& cur_buffer = target->second;
-                cur_buffer.append(data);
-            } else {
-                LOG(ERROR) << "Ringname " << name << " not found";
-                return;
+            {
+                std::unique_lock<std::mutex> lk(shared_ptr_this->lock_t);
+                const auto& target =
+                    shared_ptr_this->ringbuffer_map_.find(name);
+                if (target != shared_ptr_this->ringbuffer_map_.end()) {
+                    Ringbuffer& cur_buffer = target->second;
+                    cur_buffer.append(data);
+                } else {
+                    LOG(ERROR) << "Ringname " << name << " not found";
+                    return;
+                }
+                // unlock
             }
         };
     legacy_hal::wifi_error legacy_status =
@@ -1610,6 +1633,11 @@ std::string WifiChip::allocateApOrStaIfaceName(uint32_t start_idx) {
 // AP iface names start with idx 1 for modes supporting
 // concurrent STA, else start with idx 0.
 std::string WifiChip::allocateApIfaceName() {
+    // Check if we have a dedicated iface for AP.
+    std::string ifname = getApIfaceName();
+    if (!ifname.empty()) {
+        return ifname;
+    }
     return allocateApOrStaIfaceName(
         isStaApConcurrencyAllowedInCurrentMode() ? 1 : 0);
 }
@@ -1626,25 +1654,29 @@ bool WifiChip::writeRingbufferFilesInternal() {
         return false;
     }
     // write ringbuffers to file
-    for (const auto& item : ringbuffer_map_) {
-        const Ringbuffer& cur_buffer = item.second;
-        if (cur_buffer.getData().empty()) {
-            continue;
-        }
-        const std::string file_path_raw =
-            kTombstoneFolderPath + item.first + "XXXXXXXXXX";
-        const int dump_fd = mkstemp(makeCharVec(file_path_raw).data());
-        if (dump_fd == -1) {
-            PLOG(ERROR) << "create file failed";
-            return false;
-        }
-        unique_fd file_auto_closer(dump_fd);
-        for (const auto& cur_block : cur_buffer.getData()) {
-            if (write(dump_fd, cur_block.data(),
-                      sizeof(cur_block[0]) * cur_block.size()) == -1) {
-                PLOG(ERROR) << "Error writing to file";
+    {
+        std::unique_lock<std::mutex> lk(lock_t);
+        for (const auto& item : ringbuffer_map_) {
+            const Ringbuffer& cur_buffer = item.second;
+            if (cur_buffer.getData().empty()) {
+                continue;
+            }
+            const std::string file_path_raw =
+                kTombstoneFolderPath + item.first + "XXXXXXXXXX";
+            const int dump_fd = mkstemp(makeCharVec(file_path_raw).data());
+            if (dump_fd == -1) {
+                PLOG(ERROR) << "create file failed";
+                return false;
+            }
+            unique_fd file_auto_closer(dump_fd);
+            for (const auto& cur_block : cur_buffer.getData()) {
+                if (write(dump_fd, cur_block.data(),
+                          sizeof(cur_block[0]) * cur_block.size()) == -1) {
+                    PLOG(ERROR) << "Error writing to file";
+                }
             }
         }
+        // unlock
     }
     return true;
 }
