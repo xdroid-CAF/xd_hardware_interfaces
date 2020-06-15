@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#define LOG_TAG "VtsHalIdentityTargetTest"
+#define LOG_TAG "VtsHalIdentityEndToEndTest"
 
 #include <aidl/Gtest.h>
 #include <aidl/Vintf.h>
@@ -27,15 +27,18 @@
 #include <gtest/gtest.h>
 #include <future>
 #include <map>
+#include <tuple>
 
 #include "VtsIdentityTestUtils.h"
 
 namespace android::hardware::identity {
 
 using std::endl;
+using std::make_tuple;
 using std::map;
 using std::optional;
 using std::string;
+using std::tuple;
 using std::vector;
 
 using ::android::sp;
@@ -43,6 +46,9 @@ using ::android::String16;
 using ::android::binder::Status;
 
 using ::android::hardware::keymaster::HardwareAuthToken;
+using ::android::hardware::keymaster::VerificationToken;
+
+using test_utils::validateAttestationCertificate;
 
 class IdentityAidl : public testing::TestWithParam<std::string> {
   public:
@@ -63,18 +69,73 @@ TEST_P(IdentityAidl, hardwareInformation) {
     ASSERT_GE(info.dataChunkSize, 256);
 }
 
+tuple<bool, string, vector<uint8_t>, vector<uint8_t>> extractFromTestCredentialData(
+        const vector<uint8_t>& credentialData) {
+    string docType;
+    vector<uint8_t> storageKey;
+    vector<uint8_t> credentialPrivKey;
+
+    auto [item, _, message] = cppbor::parse(credentialData);
+    if (item == nullptr) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 3) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+
+    const cppbor::Tstr* docTypeItem = (*arrayItem)[0]->asTstr();
+    const cppbor::Bool* testCredentialItem =
+            ((*arrayItem)[1]->asSimple() != nullptr ? ((*arrayItem)[1]->asSimple()->asBool())
+                                                    : nullptr);
+    const cppbor::Bstr* encryptedCredentialKeysItem = (*arrayItem)[2]->asBstr();
+    if (docTypeItem == nullptr || testCredentialItem == nullptr ||
+        encryptedCredentialKeysItem == nullptr) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+
+    docType = docTypeItem->value();
+
+    vector<uint8_t> hardwareBoundKey = support::getTestHardwareBoundKey();
+    const vector<uint8_t>& encryptedCredentialKeys = encryptedCredentialKeysItem->value();
+    const vector<uint8_t> docTypeVec(docType.begin(), docType.end());
+    optional<vector<uint8_t>> decryptedCredentialKeys =
+            support::decryptAes128Gcm(hardwareBoundKey, encryptedCredentialKeys, docTypeVec);
+    if (!decryptedCredentialKeys) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+
+    auto [dckItem, dckPos, dckMessage] = cppbor::parse(decryptedCredentialKeys.value());
+    if (dckItem == nullptr) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+    const cppbor::Array* dckArrayItem = dckItem->asArray();
+    if (dckArrayItem == nullptr || dckArrayItem->size() != 2) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+    const cppbor::Bstr* storageKeyItem = (*dckArrayItem)[0]->asBstr();
+    const cppbor::Bstr* credentialPrivKeyItem = (*dckArrayItem)[1]->asBstr();
+    if (storageKeyItem == nullptr || credentialPrivKeyItem == nullptr) {
+        return make_tuple(false, docType, storageKey, credentialPrivKey);
+    }
+    storageKey = storageKeyItem->value();
+    credentialPrivKey = credentialPrivKeyItem->value();
+    return make_tuple(true, docType, storageKey, credentialPrivKey);
+}
+
 TEST_P(IdentityAidl, createAndRetrieveCredential) {
     // First, generate a key-pair for the reader since its public key will be
     // part of the request data.
     vector<uint8_t> readerKey;
     optional<vector<uint8_t>> readerCertificate =
-            test_utils::GenerateReaderCertificate("1234", readerKey);
+            test_utils::generateReaderCertificate("1234", &readerKey);
     ASSERT_TRUE(readerCertificate);
 
     // Make the portrait image really big (just shy of 256 KiB) to ensure that
     // the chunking code gets exercised.
     vector<uint8_t> portraitImage;
-    test_utils::SetImageData(portraitImage);
+    test_utils::setImageData(portraitImage);
 
     // Access control profiles:
     const vector<test_utils::TestProfile> testProfiles = {// Profile 0 (reader authentication)
@@ -82,7 +143,20 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
                                                           // Profile 1 (no authentication)
                                                           {1, {}, false, 0}};
 
+    // It doesn't matter since no user auth is needed in this particular test,
+    // but for good measure, clear out the tokens we pass to the HAL.
     HardwareAuthToken authToken;
+    VerificationToken verificationToken;
+    authToken.challenge = 0;
+    authToken.userId = 0;
+    authToken.authenticatorId = 0;
+    authToken.authenticatorType = ::android::hardware::keymaster::HardwareAuthenticatorType::NONE;
+    authToken.timestamp.milliSeconds = 0;
+    authToken.mac.clear();
+    verificationToken.challenge = 0;
+    verificationToken.timestamp.milliSeconds = 0;
+    verificationToken.securityLevel = ::android::hardware::keymaster::SecurityLevel::SOFTWARE;
+    verificationToken.mac.clear();
 
     // Here's the actual test data:
     const vector<test_utils::TestEntryData> testEntries = {
@@ -100,24 +174,28 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
 
     string cborPretty;
     sp<IWritableIdentityCredential> writableCredential;
-    ASSERT_TRUE(test_utils::SetupWritableCredential(writableCredential, credentialStore_));
+    ASSERT_TRUE(test_utils::setupWritableCredential(writableCredential, credentialStore_));
 
     string challenge = "attestationChallenge";
     test_utils::AttestationData attData(writableCredential, challenge, {});
     ASSERT_TRUE(attData.result.isOk())
             << attData.result.exceptionCode() << "; " << attData.result.exceptionMessage() << endl;
-    ASSERT_EQ(binder::Status::EX_NONE, attData.result.exceptionCode());
-    ASSERT_EQ(IIdentityCredentialStore::STATUS_OK, attData.result.serviceSpecificErrorCode());
 
-    // TODO: set it to something random and check it's in the cert chain
-    ASSERT_GE(attData.attestationCertificate.size(), 2);
+    EXPECT_TRUE(validateAttestationCertificate(attData.attestationCertificate,
+                                               attData.attestationChallenge,
+                                               attData.attestationApplicationId, hwInfo));
 
+    // This is kinda of a hack but we need to give the size of
+    // ProofOfProvisioning that we'll expect to receive.
+    const int32_t expectedProofOfProvisioningSize = 262861 - 326 + readerCertificate.value().size();
+    // OK to fail, not available in v1 HAL
+    writableCredential->setExpectedProofOfProvisioningSize(expectedProofOfProvisioningSize);
     ASSERT_TRUE(
             writableCredential->startPersonalization(testProfiles.size(), testEntriesEntryCounts)
                     .isOk());
 
     optional<vector<SecureAccessControlProfile>> secureProfiles =
-            test_utils::AddAccessControlProfiles(writableCredential, testProfiles);
+            test_utils::addAccessControlProfiles(writableCredential, testProfiles);
     ASSERT_TRUE(secureProfiles);
 
     // Uses TestEntryData* pointer as key and values are the encrypted blobs. This
@@ -125,7 +203,7 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
     map<const test_utils::TestEntryData*, vector<vector<uint8_t>>> encryptedBlobs;
 
     for (const auto& entry : testEntries) {
-        ASSERT_TRUE(test_utils::AddEntry(writableCredential, entry, hwInfo.dataChunkSize,
+        ASSERT_TRUE(test_utils::addEntry(writableCredential, entry, hwInfo.dataChunkSize,
                                          encryptedBlobs, true));
     }
 
@@ -135,6 +213,7 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
             writableCredential->finishAddingEntries(&credentialData, &proofOfProvisioningSignature)
                     .isOk());
 
+    // Validate the proofOfProvisioning which was returned
     optional<vector<uint8_t>> proofOfProvisioning =
             support::coseSignGetPayload(proofOfProvisioningSignature);
     ASSERT_TRUE(proofOfProvisioning);
@@ -194,6 +273,22 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
                                                  {},  // Additional data
                                                  credentialPubKey.value()));
     writableCredential = nullptr;
+
+    // Extract doctype, storage key, and credentialPrivKey from credentialData... this works
+    // only because we asked for a test-credential meaning that the HBK is all zeroes.
+    auto [exSuccess, exDocType, exStorageKey, exCredentialPrivKey] =
+            extractFromTestCredentialData(credentialData);
+    ASSERT_TRUE(exSuccess);
+    ASSERT_EQ(exDocType, "org.iso.18013-5.2019.mdl");
+    // ... check that the public key derived from the private key matches what was
+    // in the certificate.
+    optional<vector<uint8_t>> exCredentialKeyPair =
+            support::ecPrivateKeyToKeyPair(exCredentialPrivKey);
+    ASSERT_TRUE(exCredentialKeyPair);
+    optional<vector<uint8_t>> exCredentialPubKey =
+            support::ecKeyPairGetPublicKey(exCredentialKeyPair.value());
+    ASSERT_TRUE(exCredentialPubKey);
+    ASSERT_EQ(exCredentialPubKey.value(), credentialPubKey.value());
 
     // Now that the credential has been provisioned, read it back and check the
     // correct data is returned.
@@ -267,7 +362,30 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
     vector<uint8_t> signingKeyBlob;
     Certificate signingKeyCertificate;
     ASSERT_TRUE(credential->generateSigningKeyPair(&signingKeyBlob, &signingKeyCertificate).isOk());
+    optional<vector<uint8_t>> signingPubKey =
+            support::certificateChainGetTopMostKey(signingKeyCertificate.encodedCertificate);
+    EXPECT_TRUE(signingPubKey);
 
+    // Since we're using a test-credential we know storageKey meaning we can get the
+    // private key. Do this, derive the public key from it, and check this matches what
+    // is in the certificate...
+    const vector<uint8_t> exDocTypeVec(exDocType.begin(), exDocType.end());
+    optional<vector<uint8_t>> exSigningPrivKey =
+            support::decryptAes128Gcm(exStorageKey, signingKeyBlob, exDocTypeVec);
+    ASSERT_TRUE(exSigningPrivKey);
+    optional<vector<uint8_t>> exSigningKeyPair =
+            support::ecPrivateKeyToKeyPair(exSigningPrivKey.value());
+    ASSERT_TRUE(exSigningKeyPair);
+    optional<vector<uint8_t>> exSigningPubKey =
+            support::ecKeyPairGetPublicKey(exSigningKeyPair.value());
+    ASSERT_TRUE(exSigningPubKey);
+    ASSERT_EQ(exSigningPubKey.value(), signingPubKey.value());
+
+    vector<RequestNamespace> requestedNamespaces = test_utils::buildRequestNamespaces(testEntries);
+    // OK to fail, not available in v1 HAL
+    credential->setRequestedNamespaces(requestedNamespaces).isOk();
+    // OK to fail, not available in v1 HAL
+    credential->setVerificationToken(verificationToken);
     ASSERT_TRUE(credential
                         ->startRetrieval(secureProfiles.value(), authToken, itemsRequestBytes,
                                          signingKeyBlob, sessionTranscriptBytes,
@@ -291,6 +409,9 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
             content.insert(content.end(), chunk.begin(), chunk.end());
         }
         EXPECT_EQ(content, entry.valueCbor);
+
+        // TODO: also use |exStorageKey| to decrypt data and check it's the same as whatt
+        // the HAL returns...
     }
 
     vector<uint8_t> mac;
@@ -321,15 +442,12 @@ TEST_P(IdentityAidl, createAndRetrieveCredential) {
     deviceAuthentication.add(docType);
     deviceAuthentication.add(cppbor::Semantic(24, deviceNameSpacesBytes));
     vector<uint8_t> encodedDeviceAuthentication = deviceAuthentication.encode();
-    optional<vector<uint8_t>> signingPublicKey =
-            support::certificateChainGetTopMostKey(signingKeyCertificate.encodedCertificate);
-    EXPECT_TRUE(signingPublicKey);
 
     // Derive the key used for MACing.
     optional<vector<uint8_t>> readerEphemeralPrivateKey =
             support::ecKeyPairGetPrivateKey(readerEphemeralKeyPair.value());
     optional<vector<uint8_t>> sharedSecret =
-            support::ecdh(signingPublicKey.value(), readerEphemeralPrivateKey.value());
+            support::ecdh(signingPubKey.value(), readerEphemeralPrivateKey.value());
     ASSERT_TRUE(sharedSecret);
     vector<uint8_t> salt = {0x00};
     vector<uint8_t> info = {};

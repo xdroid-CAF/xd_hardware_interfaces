@@ -109,6 +109,9 @@ class FrontendTests {
     AssertionResult scanFrontend(FrontendConfig config, FrontendScanType type);
     AssertionResult stopScanFrontend();
     AssertionResult tuneFrontend(FrontendConfig config);
+    AssertionResult setLnb(uint32_t lnbId);
+    void verifyFrontendStatus(vector<FrontendStatusType> statusTypes,
+                              vector<FrontendStatus> expectStatuses);
     AssertionResult stopTuneFrontend();
     AssertionResult closeFrontend();
 
@@ -117,6 +120,9 @@ class FrontendTests {
     void scanTest(FrontendConfig frontend, FrontendScanType type);
 
   protected:
+    static AssertionResult failure() { return ::testing::AssertionFailure(); }
+    static AssertionResult success() { return ::testing::AssertionSuccess(); }
+
     sp<IFrontend> mFrontend;
     FrontendInfo mFrontendInfo;
     sp<FrontendCallback> mFrontendCallback;
