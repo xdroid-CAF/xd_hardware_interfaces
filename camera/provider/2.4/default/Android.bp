@@ -37,6 +37,7 @@ cc_library_shared {
         "camera.device@3.5-impl_headers",
     ],
     export_include_dirs: ["."],
+    sdclang: false, // See b/163842697
 }
 
 cc_library_shared {

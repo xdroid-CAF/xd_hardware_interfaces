@@ -32,4 +32,5 @@ cc_library_shared {
         "media_plugin_headers",
     ],
     export_include_dirs: ["."],
+    sdclang: false, // See b/163842697
 }
