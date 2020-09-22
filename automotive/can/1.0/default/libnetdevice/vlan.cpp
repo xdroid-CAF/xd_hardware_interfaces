@@ -19,8 +19,10 @@
 #include "common.h"
 
 #include <android-base/logging.h>
-#include <libnetdevice/NetlinkRequest.h>
-#include <libnetdevice/NetlinkSocket.h>
+#include <libnl++/MessageFactory.h>
+#include <libnl++/Socket.h>
+
+#include <linux/rtnetlink.h>
 
 namespace android::netdevice::vlan {
 
@@ -31,22 +33,23 @@ bool add(const std::string& eth, const std::string& vlan, uint16_t id) {
         return false;
     }
 
-    NetlinkRequest<struct ifinfomsg> req(RTM_NEWLINK, NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL);
-    req.addattr(IFLA_IFNAME, vlan);
-    req.addattr<uint32_t>(IFLA_LINK, ethidx);
+    nl::MessageFactory<ifinfomsg> req(RTM_NEWLINK,
+                                      NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK);
+    req.add(IFLA_IFNAME, vlan);
+    req.add<uint32_t>(IFLA_LINK, ethidx);
 
     {
-        auto linkinfo = req.nest(IFLA_LINKINFO);
-        req.addattr(IFLA_INFO_KIND, "vlan");
+        auto linkinfo = req.addNested(IFLA_LINKINFO);
+        req.add(IFLA_INFO_KIND, "vlan");
 
         {
-            auto linkinfo = req.nest(IFLA_INFO_DATA);
-            req.addattr(IFLA_VLAN_ID, id);
+            auto linkinfo = req.addNested(IFLA_INFO_DATA);
+            req.add(IFLA_VLAN_ID, id);
         }
     }
 
-    NetlinkSocket sock(NETLINK_ROUTE);
-    return sock.send(req) && sock.receiveAck();
+    nl::Socket sock(NETLINK_ROUTE);
+    return sock.send(req) && sock.receiveAck(req);
 }
 
 }  // namespace android::netdevice::vlan

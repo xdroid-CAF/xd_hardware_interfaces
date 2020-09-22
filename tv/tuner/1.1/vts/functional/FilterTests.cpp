@@ -16,6 +16,24 @@
 
 #include "FilterTests.h"
 
+bool FilterCallback::readFilterEventData() {
+    bool result = false;
+    ALOGW("[vts] reading from filter FMQ or buffer %d", mFilterId);
+    // todo separate filter handlers
+    for (int i = 0; i < mFilterEventExt.events.size(); i++) {
+        auto eventExt = mFilterEventExt.events[i];
+        switch (eventExt.getDiscriminator()) {
+            case DemuxFilterEventExt::Event::hidl_discriminator::tsRecord:
+                ALOGW("[vts] Extended TS record filter event, pts=%" PRIu64 ".",
+                      eventExt.tsRecord().pts);
+                break;
+            default:
+                break;
+        }
+    }
+    return result;
+}
+
 AssertionResult FilterTests::openFilterInDemux(DemuxFilterType type, uint32_t bufferSize) {
     Result status;
     EXPECT_TRUE(mDemux) << "Test with openDemux first.";
@@ -52,6 +70,8 @@ AssertionResult FilterTests::getNewlyOpenedFilterId_64bit(uint64_t& filterId) {
     }
 
     if (status == Result::SUCCESS) {
+        mFilterCallback->setFilterId(mFilterId);
+        mFilterCallback->setFilterInterface(mFilter);
         mUsedFilterIds.insert(mUsedFilterIds.end(), mFilterId);
         mFilters[mFilterId] = mFilter;
         mFilterCallbacks[mFilterId] = mFilterCallback;

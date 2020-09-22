@@ -71,6 +71,12 @@ Return<Result> Frontend::tune(const FrontendSettings& /* settings */) {
     return Result::SUCCESS;
 }
 
+Return<Result> Frontend::tune_1_1(const FrontendSettings& settings,
+                                  const V1_1::FrontendSettingsExt& /*settingsExt*/) {
+    ALOGV("%s", __FUNCTION__);
+    return tune(settings);
+}
+
 Return<Result> Frontend::stopTune() {
     ALOGV("%s", __FUNCTION__);
 
@@ -113,6 +119,12 @@ Return<Result> Frontend::scan(const FrontendSettings& settings, FrontendScanType
     mIsLocked = true;
 
     return Result::SUCCESS;
+}
+
+Return<Result> Frontend::scan_1_1(const FrontendSettings& settings, FrontendScanType type,
+                                  const V1_1::FrontendSettingsExt& /*settingsExt*/) {
+    ALOGV("%s", __FUNCTION__);
+    return scan(settings, type);
 }
 
 Return<Result> Frontend::stopScan() {
@@ -258,6 +270,14 @@ Return<Result> Frontend::setLnb(uint32_t /* lnb */) {
     if (!supportsSatellite()) {
         return Result::INVALID_STATE;
     }
+    return Result::SUCCESS;
+}
+
+Return<Result> Frontend::linkCiCam(uint32_t ciCamId) {
+    ALOGV("%s", __FUNCTION__);
+
+    mCiCamId = ciCamId;
+
     return Result::SUCCESS;
 }
 

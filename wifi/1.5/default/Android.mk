@@ -54,6 +54,7 @@ LOCAL_SRC_FILES := \
     wifi_feature_flags.cpp \
     wifi_iface_util.cpp \
     wifi_legacy_hal.cpp \
+    wifi_legacy_hal_factory.cpp \
     wifi_legacy_hal_stubs.cpp \
     wifi_mode_controller.cpp \
     wifi_nan_iface.cpp \
@@ -70,12 +71,14 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libwifi-hal \
     libwifi-system-iface \
+    libxml2 \
     android.hardware.wifi@1.0 \
     android.hardware.wifi@1.1 \
     android.hardware.wifi@1.2 \
     android.hardware.wifi@1.3 \
     android.hardware.wifi@1.4 \
     android.hardware.wifi@1.5
+LOCAL_C_INCLUDES += $(TOP)/external/libxml2/include
 LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
 include $(BUILD_STATIC_LIBRARY)
 
@@ -104,6 +107,7 @@ LOCAL_SHARED_LIBRARIES := \
     libhwbinder \
     libwifi-hal \
     libwifi-system-iface \
+    libxml2 \
     android.hardware.wifi@1.0 \
     android.hardware.wifi@1.1 \
     android.hardware.wifi@1.2 \
@@ -137,6 +141,7 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libwifi-hal \
     libwifi-system-iface \
+    libxml2 \
     android.hardware.wifi@1.0 \
     android.hardware.wifi@1.1 \
     android.hardware.wifi@1.2 \

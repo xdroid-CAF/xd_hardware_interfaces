@@ -282,9 +282,6 @@ size_t cpioArchiveFilesInDir(int out_fd, const char* input_dir) {
             continue;
         }
         std::string cur_file_name(dp->d_name);
-        // string.size() does not include the null terminator. The cpio FreeBSD
-        // file header expects the null character to be included in the length.
-        const size_t file_name_len = cur_file_name.size() + 1;
         struct stat st;
         const std::string cur_file_path = kTombstoneFolderPath + cur_file_name;
         if (stat(cur_file_path.c_str(), &st) == -1) {
@@ -298,8 +295,15 @@ size_t cpioArchiveFilesInDir(int out_fd, const char* input_dir) {
             n_error++;
             continue;
         }
+        std::string file_name_with_last_modified_time =
+            cur_file_name + "-" + std::to_string(st.st_mtime);
+        // string.size() does not include the null terminator. The cpio FreeBSD
+        // file header expects the null character to be included in the length.
+        const size_t file_name_len =
+            file_name_with_last_modified_time.size() + 1;
         unique_fd file_auto_closer(fd_read);
-        if (!cpioWriteHeader(out_fd, st, cur_file_name.c_str(),
+        if (!cpioWriteHeader(out_fd, st,
+                             file_name_with_last_modified_time.c_str(),
                              file_name_len)) {
             return ++n_error;
         }
@@ -333,7 +337,8 @@ using hidl_return_util::validateAndCall;
 using hidl_return_util::validateAndCallWithLock;
 
 WifiChip::WifiChip(
-    ChipId chip_id, const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
+    ChipId chip_id, bool is_primary,
+    const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
     const std::weak_ptr<mode_controller::WifiModeController> mode_controller,
     const std::weak_ptr<iface_util::WifiIfaceUtil> iface_util,
     const std::weak_ptr<feature_flags::WifiFeatureFlags> feature_flags,
@@ -344,7 +349,7 @@ WifiChip::WifiChip(
       iface_util_(iface_util),
       is_valid_(true),
       current_mode_id_(feature_flags::chip_mode_ids::kInvalid),
-      modes_(feature_flags.lock()->getChipModes()),
+      modes_(feature_flags.lock()->getChipModes(is_primary)),
       debug_ring_buffer_cb_registered_(false),
       subsystemCallbackHandler_(handler) {
     setActiveWlanIfaceNameProperty(kNoActiveWlanIfaceNamePropertyValue);
@@ -624,6 +629,13 @@ Return<void> WifiChip::getCapabilities_1_3(getCapabilities_cb hidl_status_cb) {
                            hidl_status_cb);
 }
 
+Return<void> WifiChip::getCapabilities_1_5(
+    getCapabilities_1_5_cb hidl_status_cb) {
+    return validateAndCall(this, WifiStatusCode::ERROR_WIFI_CHIP_INVALID,
+                           &WifiChip::getCapabilitiesInternal_1_5,
+                           hidl_status_cb);
+}
+
 Return<void> WifiChip::debug(const hidl_handle& handle,
                              const hidl_vec<hidl_string>&) {
     if (handle != nullptr && handle->numFds >= 1) {
@@ -711,9 +723,10 @@ void WifiChip::invalidateAndRemoveAllIfaces() {
 
 void WifiChip::invalidateAndRemoveDependencies(
     const std::string& removed_iface_name) {
-    for (const auto& nan_iface : nan_ifaces_) {
+    for (auto it = nan_ifaces_.begin(); it != nan_ifaces_.end();) {
+        auto nan_iface = *it;
         if (nan_iface->getName() == removed_iface_name) {
-            invalidateAndClear(nan_ifaces_, nan_iface);
+            nan_iface->invalidate();
             for (const auto& callback : event_cb_handler_.getCallbacks()) {
                 if (!callback
                          ->onIfaceRemoved(IfaceType::NAN, removed_iface_name)
@@ -721,11 +734,19 @@ void WifiChip::invalidateAndRemoveDependencies(
                     LOG(ERROR) << "Failed to invoke onIfaceRemoved callback";
                 }
             }
+            it = nan_ifaces_.erase(it);
+        } else {
+            ++it;
         }
     }
-    for (const auto& rtt : rtt_controllers_) {
+
+    for (auto it = rtt_controllers_.begin(); it != rtt_controllers_.end();) {
+        auto rtt = *it;
         if (rtt->getIfaceName() == removed_iface_name) {
-            invalidateAndClear(rtt_controllers_, rtt);
+            rtt->invalidate();
+            it = rtt_controllers_.erase(it);
+        } else {
+            ++it;
         }
     }
 }
@@ -1271,8 +1292,13 @@ WifiStatus WifiChip::selectTxPowerScenarioInternal_1_2(
 }
 
 std::pair<WifiStatus, uint32_t> WifiChip::getCapabilitiesInternal_1_3() {
+    // Deprecated support for this callback.
+    return {createWifiStatus(WifiStatusCode::ERROR_NOT_SUPPORTED), 0};
+}
+
+std::pair<WifiStatus, uint32_t> WifiChip::getCapabilitiesInternal_1_5() {
     legacy_hal::wifi_error legacy_status;
-    uint32_t legacy_feature_set;
+    uint64_t legacy_feature_set;
     uint32_t legacy_logger_feature_set;
     const auto ifname = getFirstActiveWlanIfaceName();
     std::tie(legacy_status, legacy_feature_set) =
@@ -1631,15 +1657,16 @@ std::string WifiChip::getFirstActiveWlanIfaceName() {
     // This could happen if the chip call is made before any STA/AP
     // iface is created. Default to wlan0 for such cases.
     LOG(WARNING) << "No active wlan interfaces in use! Using default";
-    return getWlanIfaceName(0);
+    return getWlanIfaceNameWithType(IfaceType::STA, 0);
 }
 
 // Return the first wlan (wlan0, wlan1 etc.) starting from |start_idx|
 // not already in use.
 // Note: This doesn't check the actual presence of these interfaces.
-std::string WifiChip::allocateApOrStaIfaceName(uint32_t start_idx) {
+std::string WifiChip::allocateApOrStaIfaceName(IfaceType type,
+                                               uint32_t start_idx) {
     for (unsigned idx = start_idx; idx < kMaxWlanIfaces; idx++) {
-        const auto ifname = getWlanIfaceName(idx);
+        const auto ifname = getWlanIfaceNameWithType(type, idx);
         if (findUsingName(ap_ifaces_, ifname)) continue;
         if (findUsingName(sta_ifaces_, ifname)) continue;
         return ifname;
@@ -1657,14 +1684,16 @@ std::string WifiChip::allocateApIfaceName() {
     if (!ifname.empty()) {
         return ifname;
     }
-    return allocateApOrStaIfaceName(
-        isStaApConcurrencyAllowedInCurrentMode() ? 1 : 0);
+    return allocateApOrStaIfaceName(IfaceType::AP,
+                                    isStaApConcurrencyAllowedInCurrentMode()
+                                        ? 1
+                                        : 0);
 }
 
 // STA iface names start with idx 0.
 // Primary STA iface will always be 0.
 std::string WifiChip::allocateStaIfaceName() {
-    return allocateApOrStaIfaceName(0);
+    return allocateApOrStaIfaceName(IfaceType::STA, 0);
 }
 
 bool WifiChip::writeRingbufferFilesInternal() {
@@ -1698,6 +1727,17 @@ bool WifiChip::writeRingbufferFilesInternal() {
         // unique_lock unlocked here
     }
     return true;
+}
+
+std::string WifiChip::getWlanIfaceNameWithType(IfaceType type, unsigned idx) {
+    std::string ifname;
+
+    // let the legacy hal override the interface name
+    legacy_hal::wifi_error err =
+        legacy_hal_.lock()->getSupportedIfaceName((uint32_t)type, ifname);
+    if (err == legacy_hal::WIFI_SUCCESS) return ifname;
+
+    return getWlanIfaceName(idx);
 }
 
 }  // namespace implementation
