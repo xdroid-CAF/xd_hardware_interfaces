@@ -36,7 +36,7 @@ static constexpr uint32_t kMaxGscanFrequenciesForBand = 64;
 static constexpr uint32_t kLinkLayerStatsDataMpduSizeThreshold = 128;
 static constexpr uint32_t kMaxWakeReasonStatsArraySize = 32;
 static constexpr uint32_t kMaxRingBuffers = 10;
-static constexpr uint32_t kMaxStopCompleteWaitMs = 250;
+static constexpr uint32_t kMaxStopCompleteWaitMs = 500;
 static constexpr char kDriverPropName[] = "wlan.driver.status";
 
 // Helper function to create a non-const char* for legacy Hal API's.
@@ -402,7 +402,7 @@ wifi_error WifiLegacyHal::stop(
         on_stop_complete_user_callback();
         return WIFI_SUCCESS;
     }
-    LOG(DEBUG) << "Stopping legacy HAL";
+    LOG(ERROR) << "Stopping legacy HAL";
     on_stop_complete_internal_callback = [on_stop_complete_user_callback,
                                           this](wifi_handle handle) {
         CHECK_EQ(global_handle_, handle) << "Handle mismatch";
@@ -415,6 +415,7 @@ wifi_error WifiLegacyHal::stop(
         is_started_ = false;
     };
     awaiting_event_loop_termination_ = true;
+    LOG(ERROR) << "Legacy HAL trigger wifi cleanup";
     global_func_table_.wifi_cleanup(global_handle_, onAsyncStopComplete);
     const auto status = stop_wait_cv_.wait_for(
         *lock, std::chrono::milliseconds(kMaxStopCompleteWaitMs),
@@ -1390,12 +1391,13 @@ wifi_interface_handle WifiLegacyHal::getIfaceHandle(
 void WifiLegacyHal::runEventLoop() {
     LOG(DEBUG) << "Starting legacy HAL event loop";
     global_func_table_.wifi_event_loop(global_handle_);
+    LOG(ERROR) << "Legacy HAL Wifi event loop exited";
     const auto lock = hidl_sync_util::acquireGlobalLock();
     if (!awaiting_event_loop_termination_) {
         LOG(FATAL)
             << "Legacy HAL event loop terminated, but HAL was not stopping";
     }
-    LOG(DEBUG) << "Legacy HAL event loop terminated";
+    LOG(ERROR) << "Legacy HAL event loop terminated";
     awaiting_event_loop_termination_ = false;
     stop_wait_cv_.notify_one();
 }
