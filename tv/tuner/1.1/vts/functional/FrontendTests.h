@@ -15,9 +15,9 @@
  */
 
 #include <android-base/logging.h>
-#include <android/hardware/tv/tuner/1.0/IFrontend.h>
 #include <android/hardware/tv/tuner/1.0/IFrontendCallback.h>
 #include <android/hardware/tv/tuner/1.0/types.h>
+#include <android/hardware/tv/tuner/1.1/IFrontend.h>
 #include <android/hardware/tv/tuner/1.1/ITuner.h>
 #include <binder/MemoryDealer.h>
 #include <gtest/gtest.h>
@@ -31,6 +31,7 @@
 #include <utils/Mutex.h>
 #include <map>
 
+#include "DvrTests.h"
 #include "VtsHalTvTunerV1_1TestConfigurations.h"
 
 #define WAIT_TIMEOUT 3000000000
@@ -51,6 +52,7 @@ using android::hardware::tv::tuner::V1_0::FrontendId;
 using android::hardware::tv::tuner::V1_0::FrontendInfo;
 using android::hardware::tv::tuner::V1_0::FrontendScanMessage;
 using android::hardware::tv::tuner::V1_0::FrontendScanMessageType;
+using android::hardware::tv::tuner::V1_0::FrontendScanType;
 using android::hardware::tv::tuner::V1_0::IFrontend;
 using android::hardware::tv::tuner::V1_0::IFrontendCallback;
 using android::hardware::tv::tuner::V1_0::Result;
@@ -61,36 +63,89 @@ using ::testing::AssertionResult;
 using namespace std;
 
 #define INVALID_ID -1
+#define WAIT_TIMEOUT 3000000000
 
 class FrontendCallback : public IFrontendCallback {
   public:
     virtual Return<void> onEvent(FrontendEventType frontendEventType) override;
     virtual Return<void> onScanMessage(FrontendScanMessageType type,
                                        const FrontendScanMessage& message) override;
+
+    void tuneTestOnLock(sp<IFrontend>& frontend, FrontendSettings settings,
+                        FrontendSettingsExt settingsExt);
+    void scanTest(sp<IFrontend>& frontend, FrontendConfig config, FrontendScanType type);
+
+    // Helper methods
+    uint32_t getTargetFrequency(FrontendSettings settings, FrontendType type);
+    void resetBlindScanStartingFrequency(FrontendConfig& config, uint32_t resetingFreq);
+
+  private:
+    bool mEventReceived = false;
+    bool mScanMessageReceived = false;
+    bool mLockMsgReceived = false;
+    bool mScanMsgProcessed = true;
+    FrontendScanMessageType mScanMessageType;
+    FrontendScanMessage mScanMessage;
+    hidl_vec<uint8_t> mEventMessage;
+    android::Mutex mMsgLock;
+    android::Condition mMsgCondition;
+    android::Condition mLockMsgCondition;
 };
 
 class FrontendTests {
   public:
     sp<ITuner> mService;
 
-    void setService(sp<ITuner> tuner) { mService = tuner; }
+    void setService(sp<ITuner> tuner) {
+        mService = tuner;
+        mDvrTests.setService(tuner);
+        getDefaultSoftwareFrontendPlaybackConfig(mDvrConfig);
+    }
 
     AssertionResult getFrontendIds();
     AssertionResult getFrontendInfo(uint32_t frontendId);
     AssertionResult openFrontendById(uint32_t frontendId);
     AssertionResult setFrontendCallback();
+    AssertionResult scanFrontend(FrontendConfig config, FrontendScanType type);
+    AssertionResult stopScanFrontend();
+    AssertionResult tuneFrontend(FrontendConfig config, bool testWithDemux);
+    void verifyFrontendStatus(vector<FrontendStatusType> statusTypes,
+                              vector<FrontendStatus> expectStatuses);
+    AssertionResult stopTuneFrontend(bool testWithDemux);
     AssertionResult closeFrontend();
 
     void getFrontendIdByType(FrontendType feType, uint32_t& feId);
+    void tuneTest(FrontendConfig frontendConf);
+    void scanTest(FrontendConfig frontend, FrontendScanType type);
+
+    void setDvrTests(DvrTests dvrTests) { mDvrTests = dvrTests; }
+    void setDemux(sp<IDemux> demux) { mDvrTests.setDemux(demux); }
+    void setSoftwareFrontendDvrConfig(DvrConfig conf) { mDvrConfig = conf; }
 
   protected:
     static AssertionResult failure() { return ::testing::AssertionFailure(); }
     static AssertionResult success() { return ::testing::AssertionSuccess(); }
+
+    void getDefaultSoftwareFrontendPlaybackConfig(DvrConfig& dvrConfig) {
+        PlaybackSettings playbackSettings{
+                .statusMask = 0xf,
+                .lowThreshold = 0x1000,
+                .highThreshold = 0x07fff,
+                .dataFormat = DataFormat::ES,
+                .packetSize = 188,
+        };
+        dvrConfig.type = DvrType::PLAYBACK;
+        dvrConfig.playbackInputFile = "/data/local/tmp/test.es";
+        dvrConfig.bufferSize = FMQ_SIZE_4M;
+        dvrConfig.settings.playback(playbackSettings);
+    }
 
     sp<IFrontend> mFrontend;
     FrontendInfo mFrontendInfo;
     sp<FrontendCallback> mFrontendCallback;
     hidl_vec<FrontendId> mFeIds;
 
+    DvrTests mDvrTests;
     bool mIsSoftwareFe = false;
+    DvrConfig mDvrConfig;
 };

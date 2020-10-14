@@ -17,10 +17,11 @@
 #include <android-base/logging.h>
 #include <android/hardware/tv/tuner/1.0/IDemux.h>
 #include <android/hardware/tv/tuner/1.0/IFilter.h>
-#include <android/hardware/tv/tuner/1.0/IFilterCallback.h>
 #include <android/hardware/tv/tuner/1.0/types.h>
 #include <android/hardware/tv/tuner/1.1/IFilter.h>
+#include <android/hardware/tv/tuner/1.1/IFilterCallback.h>
 #include <android/hardware/tv/tuner/1.1/ITuner.h>
+#include <android/hardware/tv/tuner/1.1/types.h>
 #include <fmq/MessageQueue.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlSupport.h>
@@ -51,8 +52,9 @@ using android::hardware::tv::tuner::V1_0::DemuxFilterType;
 using android::hardware::tv::tuner::V1_0::DemuxTsFilterType;
 using android::hardware::tv::tuner::V1_0::IDemux;
 using android::hardware::tv::tuner::V1_0::IFilter;
-using android::hardware::tv::tuner::V1_0::IFilterCallback;
 using android::hardware::tv::tuner::V1_0::Result;
+using android::hardware::tv::tuner::V1_1::DemuxFilterEventExt;
+using android::hardware::tv::tuner::V1_1::IFilterCallback;
 using android::hardware::tv::tuner::V1_1::ITuner;
 
 using ::testing::AssertionResult;
@@ -77,13 +79,46 @@ using MQDesc = MQDescriptorSync<uint8_t>;
 
 class FilterCallback : public IFilterCallback {
   public:
-    virtual Return<void> onFilterEvent(const DemuxFilterEvent& /*filterEvent*/) override {
+    virtual Return<void> onFilterEvent_1_1(const DemuxFilterEvent& filterEvent,
+                                           const DemuxFilterEventExt& filterEventExt) override {
+        android::Mutex::Autolock autoLock(mMsgLock);
+        // Temprarily we treat the first coming back filter data on the matching pid a success
+        // once all of the MQ are cleared, means we got all the expected output
+        mFilterEvent = filterEvent;
+        mFilterEventExt = filterEventExt;
+        readFilterEventData();
+        mPidFilterOutputCount++;
+        mMsgCondition.signal();
+        return Void();
+    }
+
+    virtual Return<void> onFilterEvent(
+            const android::hardware::tv::tuner::V1_0::DemuxFilterEvent& /*filterEvent*/) override {
         return Void();
     }
 
     virtual Return<void> onFilterStatus(const DemuxFilterStatus /*status*/) override {
         return Void();
     }
+
+    void setFilterId(uint32_t filterId) { mFilterId = filterId; }
+    void setFilterInterface(sp<IFilter> filter) { mFilter = filter; }
+    void setFilterEventType(FilterEventType type) { mFilterEventType = type; }
+
+    bool readFilterEventData();
+
+  private:
+    uint32_t mFilterId;
+    sp<IFilter> mFilter;
+    FilterEventType mFilterEventType;
+    DemuxFilterEvent mFilterEvent;
+    DemuxFilterEventExt mFilterEventExt;
+
+    android::Mutex mMsgLock;
+    android::Mutex mFilterOutputLock;
+    android::Condition mMsgCondition;
+
+    int mPidFilterOutputCount = 0;
 };
 
 class FilterTests {
