@@ -5,8 +5,10 @@ hidl_interface {
     root: "android.hardware",
     srcs: [
         "IFilter.hal",
+        "IFrontend.hal",
+        "IFilterCallback.hal",
         "ITuner.hal",
-        "IDemux.hal",
+        "types.hal",
     ],
     interfaces: [
         "android.hidl.base@1.0",
@@ -14,4 +16,5 @@ hidl_interface {
         "android.hardware.tv.tuner@1.0",
     ],
     gen_java: false,
+    gen_java_constants: true,
 }
