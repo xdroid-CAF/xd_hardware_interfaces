@@ -61,11 +61,6 @@ ndk::ScopedAStatus Fingerprint::createSession(int32_t /*sensorId*/, int32_t /*us
     return ndk::ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Fingerprint::setResetLockoutCallback(
-        const std::shared_ptr<IResetLockoutCallback>& /*cb*/) {
-    return ndk::ScopedAStatus::ok();
-}
-
 ndk::ScopedAStatus Fingerprint::generateChallenge(
         int32_t /*sensorId*/, int32_t /*userId*/, int32_t /*timeoutSec*/,
         const std::shared_ptr<IGenerateChallengeCallback>& /*cb*/) {
@@ -73,7 +68,7 @@ ndk::ScopedAStatus Fingerprint::generateChallenge(
 }
 
 ndk::ScopedAStatus Fingerprint::revokeChallenge(
-        int32_t /*sensorId*/, int32_t /*userId*/,
+        int32_t /*sensorId*/, int32_t /*userId*/, int64_t /*challenge*/,
         const std::shared_ptr<IRevokeChallengeCallback>& /*cb*/) {
     return ndk::ScopedAStatus::ok();
 }
