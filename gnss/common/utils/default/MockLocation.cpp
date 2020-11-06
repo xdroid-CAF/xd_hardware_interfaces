@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package android.hardware.biometrics.fingerprint;
+#include "MockLocation.h"
 
-@VintfStability
-oneway interface IGenerateChallengeCallback {
-    /**
-     * Notifies the framework when a challenge is successfully generated.
-     */
-    void onChallengeGenerated(in int sensorId, in int userId, in long challenge);
-}
+namespace android::hardware::gnss::common {
 
+float gMockLatitudeDegrees{37.4219999};
+float gMockLongitudeDegrees{-122.0840575};
+float gMockAltitudeMeters{1.60062531};
+
+}  // namespace android::hardware::gnss::common

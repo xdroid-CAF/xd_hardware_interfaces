@@ -22,6 +22,10 @@ AssertionResult TunerBroadcastHidlTest::filterDataOutputTest() {
     return filterDataOutputTestBase(mFilterTests);
 }
 
+AssertionResult TunerRecordHidlTest::filterDataOutputTest() {
+    return filterDataOutputTestBase(mFilterTests);
+}
+
 void TunerFilterHidlTest::configSingleFilterInDemuxTest(FilterConfig filterConf,
                                                         FrontendConfig frontendConf) {
     uint32_t feId;
@@ -41,6 +45,9 @@ void TunerFilterHidlTest::configSingleFilterInDemuxTest(FilterConfig filterConf,
     ASSERT_TRUE(mFilterTests.configFilter(filterConf.settings, filterId));
     if (filterConf.type.mainType == DemuxFilterMainType::IP) {
         ASSERT_TRUE(mFilterTests.configIpFilterCid(filterConf.ipCid, filterId));
+    }
+    if (filterConf.statuses > 0) {
+        ASSERT_TRUE(mFilterTests.configureScramblingEvent(filterId, filterConf.statuses));
     }
     ASSERT_TRUE(mFilterTests.getFilterMQDescriptor(filterId));
     ASSERT_TRUE(mFilterTests.startFilter(filterId));
@@ -115,6 +122,7 @@ void TunerRecordHidlTest::recordSingleFilterTest(FilterConfig filterConf,
     ASSERT_TRUE(mFilterTests.startFilter(filterId));
     ASSERT_TRUE(mFrontendTests.tuneFrontend(frontendConf, true /*testWithDemux*/));
     mDvrTests.testRecordOutput();
+    ASSERT_TRUE(filterDataOutputTest());
     mDvrTests.stopRecordThread();
     ASSERT_TRUE(mFrontendTests.stopTuneFrontend(true /*testWithDemux*/));
     ASSERT_TRUE(mFilterTests.stopFilter(filterId));
