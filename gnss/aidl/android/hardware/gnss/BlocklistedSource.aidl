@@ -14,13 +14,23 @@
  * limitations under the License.
  */
 
-package android.hardware.biometrics.fingerprint;
+package android.hardware.gnss;
 
+import android.hardware.gnss.GnssConstellationType;
+
+/**
+ * Represents a blocklisted source.
+ */
 @VintfStability
-oneway interface IRevokeChallengeCallback {
+parcelable BlocklistedSource {
     /**
-     * Notifies the framework when a challenge has been revoked.
+     * Defines the constellation of the given satellite(s).
      */
-    void onChallengeRevoked(in int sensorId, in int userId, in long challenge);
-}
+    GnssConstellationType constellation;
 
+    /**
+     * Satellite (space vehicle) ID number, as defined in GnssSvInfo::svid, or 0 to blocklist all
+     * svid's for the specified constellation.
+     */
+    int svid;
+}

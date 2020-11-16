@@ -249,6 +249,28 @@ Return<Result> Filter::configureAvStreamType(const V1_1::AvStreamType& avStreamT
     return Result::SUCCESS;
 }
 
+Return<Result> Filter::configureScramblingEvent(uint32_t statuses) {
+    ALOGV("%s", __FUNCTION__);
+
+    mStatuses = statuses;
+    if (mCallback_1_1 != nullptr) {
+        // Assuming current status is always NOT_SCRAMBLED
+        V1_1::DemuxFilterEventExt filterEventExt;
+        V1_1::DemuxFilterEventExt::Event event;
+        event.scramblingStatus(V1_1::ScramblingStatus::NOT_SCRAMBLED);
+        int size = filterEventExt.events.size();
+        filterEventExt.events.resize(size + 1);
+        filterEventExt.events[size] = event;
+        DemuxFilterEvent emptyFilterEvent;
+
+        mCallback_1_1->onFilterEvent_1_1(emptyFilterEvent, filterEventExt);
+        mFilterEventExt.events.resize(0);
+    } else {
+        return Result::INVALID_STATE;
+    }
+    return Result::SUCCESS;
+}
+
 bool Filter::createFilterMQ() {
     ALOGV("%s", __FUNCTION__);
 
@@ -340,17 +362,17 @@ void Filter::filterThreadLoop() {
 
             while (mFilterThreadRunning) {
                 std::lock_guard<std::mutex> lock(mFilterEventLock);
-                if (mFilterEvent.events.size() == 0) {
+                if (mFilterEvent.events.size() == 0 && mFilterEventExt.events.size() == 0) {
                     continue;
                 }
                 // After successfully write, send a callback and wait for the read to be done
-                if (mCallback != nullptr) {
-                    mCallback->onFilterEvent(mFilterEvent);
-                    mFilterEvent.events.resize(0);
-                } else if (mCallback_1_1 != nullptr) {
+                if (mCallback_1_1 != nullptr) {
                     mCallback_1_1->onFilterEvent_1_1(mFilterEvent, mFilterEventExt);
                     mFilterEventExt.events.resize(0);
+                } else if (mCallback != nullptr) {
+                    mCallback->onFilterEvent(mFilterEvent);
                 }
+                mFilterEvent.events.resize(0);
                 break;
             }
             // We do not wait for the last read to be done
@@ -659,6 +681,8 @@ Result Filter::startRecordFilterHandler() {
     V1_1::DemuxFilterRecordEventExt recordEventExt;
     recordEventExt = {
             .pts = (mPts == 0) ? time(NULL) * 900000 : mPts,
+            .firstMbInSlice = 0,     // random address
+            .mpuSequenceNumber = 1,  // random sequence number
     };
 
     int size;
