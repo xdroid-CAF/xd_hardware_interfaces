@@ -773,7 +773,7 @@ class RadioResponse_v1_6 : public ::android::hardware::radio::V1_6::IRadioRespon
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
             const SendSmsResult& sms);
 
-    Return<void> enableNrDualConnectivityResponse(
+    Return<void> setNrDualConnectivityStateResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
     Return<void> isNrDualConnectivityEnabledResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info, bool isEnabled);
@@ -792,6 +792,9 @@ class RadioResponse_v1_6 : public ::android::hardware::radio::V1_6::IRadioRespon
 
     Return<void> setAllowedNetworkTypeBitmapResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
+
+    Return<void> setDataThrottlingResponse(
+            const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
 };
 
 /* Callback class for radio indication */
@@ -807,6 +810,9 @@ class RadioIndication_v1_6 : public ::android::hardware::radio::V1_6::IRadioIndi
     Return<void> dataCallListChanged_1_6(
             RadioIndicationType type,
             const hidl_vec<::android::hardware::radio::V1_6::SetupDataCallResult>& dcList);
+
+    Return<void> unthrottleApn(RadioIndicationType type,
+                               const ::android::hardware::hidl_string& apn);
 
     /* 1.5 Api */
     Return<void> uiccApplicationsEnablementChanged(RadioIndicationType type, bool enabled);
@@ -861,6 +867,10 @@ class RadioIndication_v1_6 : public ::android::hardware::radio::V1_6::IRadioIndi
     Return<void> currentLinkCapacityEstimate(
             RadioIndicationType type,
             const ::android::hardware::radio::V1_2::LinkCapacityEstimate& lce);
+
+    Return<void> currentLinkCapacityEstimate_1_6(
+            RadioIndicationType type,
+            const ::android::hardware::radio::V1_6::LinkCapacityEstimate& lce);
 
     Return<void> currentPhysicalChannelConfigs(
             RadioIndicationType type,

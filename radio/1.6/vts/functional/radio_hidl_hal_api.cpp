@@ -260,13 +260,13 @@ TEST_P(RadioHidlTest_v1_6, setRadioPower_1_6_emergencyCall_cancelled) {
 }
 
 /*
- * Test IRadio.enableNrDualConnectivity() for the response returned.
+ * Test IRadio.setNrDualConnectivityState() for the response returned.
  */
-TEST_P(RadioHidlTest_v1_6, enableNrDualConnectivity) {
+TEST_P(RadioHidlTest_v1_6, setNrDualConnectivityState) {
     serial = GetRandomSerialNumber();
 
     Return<void> res =
-            radio_v1_6->enableNrDualConnectivity(serial, NrDualConnectivityState::DISABLE);
+            radio_v1_6->setNrDualConnectivityState(serial, NrDualConnectivityState::DISABLE);
     ASSERT_OK(res);
 
     EXPECT_EQ(std::cv_status::no_timeout, wait());
@@ -294,4 +294,70 @@ TEST_P(RadioHidlTest_v1_6, isNrDualConnectivityEnabled) {
                                  {::android::hardware::radio::V1_6::RadioError::RADIO_NOT_AVAILABLE,
                                   ::android::hardware::radio::V1_6::RadioError::INTERNAL_ERR,
                                   ::android::hardware::radio::V1_6::RadioError::NONE}));
+}
+
+/*
+ * Test IRadio.setDataThrottling() for the response returned.
+ */
+TEST_P(RadioHidlTest_v1_6, setDataThrottling) {
+    serial = GetRandomSerialNumber();
+
+    Return<void> res = radio_v1_6->setDataThrottling(
+            serial, DataThrottlingAction::THROTTLE_SECONDARY_CARRIER, 60);
+    ASSERT_OK(res);
+
+    EXPECT_EQ(std::cv_status::no_timeout, wait());
+    EXPECT_EQ(RadioResponseType::SOLICITED, radioRsp_v1_6->rspInfo.type);
+    EXPECT_EQ(serial, radioRsp_v1_6->rspInfo.serial);
+    ASSERT_TRUE(
+            CheckAnyOfErrors(radioRsp_v1_6->rspInfo.error,
+                             {::android::hardware::radio::V1_6::RadioError::RADIO_NOT_AVAILABLE,
+                              ::android::hardware::radio::V1_6::RadioError::MODEM_ERR,
+                              ::android::hardware::radio::V1_6::RadioError::NONE,
+                              ::android::hardware::radio::V1_6::RadioError::INVALID_ARGUMENTS}));
+
+    serial = GetRandomSerialNumber();
+
+    res = radio_v1_6->setDataThrottling(serial, DataThrottlingAction::THROTTLE_ANCHOR_CARRIER, 60);
+    ASSERT_OK(res);
+
+    EXPECT_EQ(std::cv_status::no_timeout, wait());
+    EXPECT_EQ(RadioResponseType::SOLICITED, radioRsp_v1_6->rspInfo.type);
+    EXPECT_EQ(serial, radioRsp_v1_6->rspInfo.serial);
+    ASSERT_TRUE(
+            CheckAnyOfErrors(radioRsp_v1_6->rspInfo.error,
+                             {::android::hardware::radio::V1_6::RadioError::RADIO_NOT_AVAILABLE,
+                              ::android::hardware::radio::V1_6::RadioError::MODEM_ERR,
+                              ::android::hardware::radio::V1_6::RadioError::NONE,
+                              ::android::hardware::radio::V1_6::RadioError::INVALID_ARGUMENTS}));
+
+    serial = GetRandomSerialNumber();
+
+    res = radio_v1_6->setDataThrottling(serial, DataThrottlingAction::HOLD, 60);
+    ASSERT_OK(res);
+
+    EXPECT_EQ(std::cv_status::no_timeout, wait());
+    EXPECT_EQ(RadioResponseType::SOLICITED, radioRsp_v1_6->rspInfo.type);
+    EXPECT_EQ(serial, radioRsp_v1_6->rspInfo.serial);
+    ASSERT_TRUE(
+            CheckAnyOfErrors(radioRsp_v1_6->rspInfo.error,
+                             {::android::hardware::radio::V1_6::RadioError::RADIO_NOT_AVAILABLE,
+                              ::android::hardware::radio::V1_6::RadioError::MODEM_ERR,
+                              ::android::hardware::radio::V1_6::RadioError::NONE,
+                              ::android::hardware::radio::V1_6::RadioError::INVALID_ARGUMENTS}));
+
+    serial = GetRandomSerialNumber();
+
+    res = radio_v1_6->setDataThrottling(serial, DataThrottlingAction::NO_DATA_THROTTLING, 60);
+    ASSERT_OK(res);
+
+    EXPECT_EQ(std::cv_status::no_timeout, wait());
+    EXPECT_EQ(RadioResponseType::SOLICITED, radioRsp_v1_6->rspInfo.type);
+    EXPECT_EQ(serial, radioRsp_v1_6->rspInfo.serial);
+    ASSERT_TRUE(
+            CheckAnyOfErrors(radioRsp_v1_6->rspInfo.error,
+                             {::android::hardware::radio::V1_6::RadioError::RADIO_NOT_AVAILABLE,
+                              ::android::hardware::radio::V1_6::RadioError::MODEM_ERR,
+                              ::android::hardware::radio::V1_6::RadioError::NONE,
+                              ::android::hardware::radio::V1_6::RadioError::INVALID_ARGUMENTS}));
 }

@@ -25,6 +25,11 @@ Return<void> RadioIndication_v1_6::dataCallListChanged_1_6(
     return Void();
 }
 
+Return<void> RadioIndication_v1_6::unthrottleApn(RadioIndicationType /*type*/,
+                                                 const ::android::hardware::hidl_string& /*apn*/) {
+    return Void();
+}
+
 /* 1.5 Apis */
 Return<void> RadioIndication_v1_6::uiccApplicationsEnablementChanged(RadioIndicationType /*type*/,
                                                                      bool /*enabled*/) {
@@ -116,6 +121,12 @@ Return<void> RadioIndication_v1_6::cellInfoList_1_2(
 Return<void> RadioIndication_v1_6::currentLinkCapacityEstimate(
         RadioIndicationType /*type*/,
         const ::android::hardware::radio::V1_2::LinkCapacityEstimate& /*lce*/) {
+    return Void();
+}
+
+Return<void> RadioIndication_v1_6::currentLinkCapacityEstimate_1_6(
+        RadioIndicationType /*type*/,
+        const ::android::hardware::radio::V1_6::LinkCapacityEstimate& /*lce*/) {
     return Void();
 }
 
