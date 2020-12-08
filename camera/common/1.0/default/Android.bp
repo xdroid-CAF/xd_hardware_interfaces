@@ -27,4 +27,5 @@ cc_library_static {
     ],
     include_dirs: ["system/media/private/camera/include"],
     export_include_dirs: ["include"],
+    sdclang: false,
 }
