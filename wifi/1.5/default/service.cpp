@@ -17,6 +17,7 @@
 #include <android-base/logging.h>
 #include <hidl/HidlLazyUtils.h>
 #include <hidl/HidlTransportSupport.h>
+#include <signal.h>
 #include <utils/Looper.h>
 #include <utils/StrongPointer.h>
 #include <hwbinder/ProcessState.h>
@@ -58,6 +59,7 @@ const bool kLazyService = false;
 #endif
 
 int main(int /*argc*/, char** argv) {
+    signal(SIGPIPE, SIG_IGN);
 #ifdef ARCH_ARM_32
     android::hardware::ProcessState::initWithMmapSize(getHWBinderMmapSize());
 #endif /* ARCH_ARM_32 */
