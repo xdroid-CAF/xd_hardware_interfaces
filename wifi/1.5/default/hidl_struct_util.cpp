@@ -69,9 +69,9 @@ convertLegacyLoggerFeatureToHidlStaIfaceCapability(uint32_t feature) {
     return {};
 }
 
-V1_3::IWifiChip::ChipCapabilityMask convertLegacyFeatureToHidlChipCapability(
-    uint32_t feature) {
-    using HidlChipCaps = V1_3::IWifiChip::ChipCapabilityMask;
+V1_5::IWifiChip::ChipCapabilityMask convertLegacyFeatureToHidlChipCapability(
+    uint64_t feature) {
+    using HidlChipCaps = V1_5::IWifiChip::ChipCapabilityMask;
     switch (feature) {
         case WIFI_FEATURE_SET_TX_POWER_LIMIT:
             return HidlChipCaps::SET_TX_POWER_LIMIT;
@@ -81,6 +81,8 @@ V1_3::IWifiChip::ChipCapabilityMask convertLegacyFeatureToHidlChipCapability(
             return HidlChipCaps::D2D_RTT;
         case WIFI_FEATURE_D2AP_RTT:
             return HidlChipCaps::D2AP_RTT;
+        case WIFI_FEATURE_INFRA_60G:
+            return HidlChipCaps::WIGIG;
         case WIFI_FEATURE_SET_LATENCY_MODE:
             return HidlChipCaps::SET_LATENCY_MODE;
         case WIFI_FEATURE_P2P_RAND_MAC:
@@ -126,7 +128,7 @@ convertLegacyFeatureToHidlStaIfaceCapability(uint64_t feature) {
 }
 
 bool convertLegacyFeaturesToHidlChipCapabilities(
-    uint32_t legacy_feature_set, uint32_t legacy_logger_feature_set,
+    uint64_t legacy_feature_set, uint32_t legacy_logger_feature_set,
     uint32_t* hidl_caps) {
     if (!hidl_caps) {
         return false;
@@ -143,10 +145,11 @@ bool convertLegacyFeaturesToHidlChipCapabilities(
                 convertLegacyLoggerFeatureToHidlChipCapability(feature);
         }
     }
-    std::vector<uint32_t> features = {WIFI_FEATURE_SET_TX_POWER_LIMIT,
+    std::vector<uint64_t> features = {WIFI_FEATURE_SET_TX_POWER_LIMIT,
                                       WIFI_FEATURE_USE_BODY_HEAD_SAR,
                                       WIFI_FEATURE_D2D_RTT,
                                       WIFI_FEATURE_D2AP_RTT,
+                                      WIFI_FEATURE_INFRA_60G,
                                       WIFI_FEATURE_SET_LATENCY_MODE,
                                       WIFI_FEATURE_P2P_RAND_MAC};
     for (const auto feature : features) {
@@ -861,46 +864,48 @@ bool convertLegacyLinkLayerRadioStatsToHidl(
 
 bool convertLegacyLinkLayerStatsToHidl(
     const legacy_hal::LinkLayerStats& legacy_stats,
-    V1_3::StaLinkLayerStats* hidl_stats) {
+    StaLinkLayerStats* hidl_stats) {
     if (!hidl_stats) {
         return false;
     }
     *hidl_stats = {};
     // iface legacy_stats conversion.
-    hidl_stats->iface.beaconRx = legacy_stats.iface.beacon_rx;
-    hidl_stats->iface.avgRssiMgmt = legacy_stats.iface.rssi_mgmt;
-    hidl_stats->iface.wmeBePktStats.rxMpdu =
+    hidl_stats->iface.V1_0.beaconRx = legacy_stats.iface.beacon_rx;
+    hidl_stats->iface.V1_0.avgRssiMgmt = legacy_stats.iface.rssi_mgmt;
+    hidl_stats->iface.V1_0.wmeBePktStats.rxMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BE].rx_mpdu;
-    hidl_stats->iface.wmeBePktStats.txMpdu =
+    hidl_stats->iface.V1_0.wmeBePktStats.txMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BE].tx_mpdu;
-    hidl_stats->iface.wmeBePktStats.lostMpdu =
+    hidl_stats->iface.V1_0.wmeBePktStats.lostMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BE].mpdu_lost;
-    hidl_stats->iface.wmeBePktStats.retries =
+    hidl_stats->iface.V1_0.wmeBePktStats.retries =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BE].retries;
-    hidl_stats->iface.wmeBkPktStats.rxMpdu =
+    hidl_stats->iface.V1_0.wmeBkPktStats.rxMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BK].rx_mpdu;
-    hidl_stats->iface.wmeBkPktStats.txMpdu =
+    hidl_stats->iface.V1_0.wmeBkPktStats.txMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BK].tx_mpdu;
-    hidl_stats->iface.wmeBkPktStats.lostMpdu =
+    hidl_stats->iface.V1_0.wmeBkPktStats.lostMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BK].mpdu_lost;
-    hidl_stats->iface.wmeBkPktStats.retries =
+    hidl_stats->iface.V1_0.wmeBkPktStats.retries =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_BK].retries;
-    hidl_stats->iface.wmeViPktStats.rxMpdu =
+    hidl_stats->iface.V1_0.wmeViPktStats.rxMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VI].rx_mpdu;
-    hidl_stats->iface.wmeViPktStats.txMpdu =
+    hidl_stats->iface.V1_0.wmeViPktStats.txMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VI].tx_mpdu;
-    hidl_stats->iface.wmeViPktStats.lostMpdu =
+    hidl_stats->iface.V1_0.wmeViPktStats.lostMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VI].mpdu_lost;
-    hidl_stats->iface.wmeViPktStats.retries =
+    hidl_stats->iface.V1_0.wmeViPktStats.retries =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VI].retries;
-    hidl_stats->iface.wmeVoPktStats.rxMpdu =
+    hidl_stats->iface.V1_0.wmeVoPktStats.rxMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VO].rx_mpdu;
-    hidl_stats->iface.wmeVoPktStats.txMpdu =
+    hidl_stats->iface.V1_0.wmeVoPktStats.txMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VO].tx_mpdu;
-    hidl_stats->iface.wmeVoPktStats.lostMpdu =
+    hidl_stats->iface.V1_0.wmeVoPktStats.lostMpdu =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VO].mpdu_lost;
-    hidl_stats->iface.wmeVoPktStats.retries =
+    hidl_stats->iface.V1_0.wmeVoPktStats.retries =
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VO].retries;
+    hidl_stats->iface.timeSliceDutyCycleInPercent =
+        legacy_stats.iface.info.time_slicing_duty_cycle_percent;
     // radio legacy_stats conversion.
     std::vector<V1_3::StaLinkLayerRadioStats> hidl_radios_stats;
     for (const auto& legacy_radio_stats : legacy_stats.radios) {
@@ -1275,7 +1280,7 @@ bool convertHidlNanEnableRequestToLegacy(
 
 bool convertHidlNanEnableRequest_1_4ToLegacy(
     const V1_4::NanEnableRequest& hidl_request1,
-    const V1_2::NanConfigRequestSupplemental& hidl_request2,
+    const NanConfigRequestSupplemental& hidl_request2,
     legacy_hal::NanEnableRequest* legacy_request) {
     if (!legacy_request) {
         LOG(ERROR)
@@ -1290,14 +1295,60 @@ bool convertHidlNanEnableRequest_1_4ToLegacy(
 
     legacy_request->config_discovery_beacon_int = 1;
     legacy_request->discovery_beacon_interval =
-        hidl_request2.discoveryBeaconIntervalMs;
+        hidl_request2.V1_2.discoveryBeaconIntervalMs;
     legacy_request->config_nss = 1;
-    legacy_request->nss = hidl_request2.numberOfSpatialStreamsInDiscovery;
+    legacy_request->nss = hidl_request2.V1_2.numberOfSpatialStreamsInDiscovery;
     legacy_request->config_dw_early_termination = 1;
     legacy_request->enable_dw_termination =
-        hidl_request2.enableDiscoveryWindowEarlyTermination;
+        hidl_request2.V1_2.enableDiscoveryWindowEarlyTermination;
     legacy_request->config_enable_ranging = 1;
-    legacy_request->enable_ranging = hidl_request2.enableRanging;
+    legacy_request->enable_ranging = hidl_request2.V1_2.enableRanging;
+
+    return true;
+}
+
+bool convertHidlNanEnableRequest_1_5ToLegacy(
+    const V1_4::NanEnableRequest& hidl_request1,
+    const NanConfigRequestSupplemental& hidl_request2,
+    legacy_hal::NanEnableRequest* legacy_request) {
+    if (!legacy_request) {
+        LOG(ERROR)
+            << "convertHidlNanEnableRequest_1_5ToLegacy: null legacy_request";
+        return false;
+    }
+
+    *legacy_request = {};
+    if (!convertHidlNanEnableRequest_1_4ToLegacy(hidl_request1, hidl_request2,
+                                                 legacy_request)) {
+        return false;
+    }
+
+    legacy_request->config_enable_instant_mode = 1;
+    legacy_request->enable_instant_mode =
+        hidl_request2.enableInstantCommunicationMode;
+
+    return true;
+}
+
+bool convertHidlNanConfigRequest_1_5ToLegacy(
+    const V1_4::NanConfigRequest& hidl_request1,
+    const NanConfigRequestSupplemental& hidl_request2,
+    legacy_hal::NanConfigRequest* legacy_request) {
+    if (!legacy_request) {
+        LOG(ERROR)
+            << "convertHidlNanConfigRequest_1_5ToLegacy: null legacy_request";
+        return false;
+    }
+
+    *legacy_request = {};
+    if (!convertHidlNanConfigRequest_1_4ToLegacy(hidl_request1, hidl_request2,
+                                                 legacy_request)) {
+        return false;
+    }
+
+    legacy_request->config_enable_instant_mode = 1;
+    legacy_request->enable_instant_mode =
+        hidl_request2.enableInstantCommunicationMode;
 
     return true;
 }
@@ -1789,7 +1840,7 @@ bool convertHidlNanConfigRequestToLegacy(
 
 bool convertHidlNanConfigRequest_1_4ToLegacy(
     const V1_4::NanConfigRequest& hidl_request1,
-    const V1_2::NanConfigRequestSupplemental& hidl_request2,
+    const NanConfigRequestSupplemental& hidl_request2,
     legacy_hal::NanConfigRequest* legacy_request) {
     if (!legacy_request) {
         LOG(ERROR) << "convertHidlNanConfigRequest_1_4ToLegacy: legacy_request "
@@ -1804,14 +1855,14 @@ bool convertHidlNanConfigRequest_1_4ToLegacy(
 
     legacy_request->config_discovery_beacon_int = 1;
     legacy_request->discovery_beacon_interval =
-        hidl_request2.discoveryBeaconIntervalMs;
+        hidl_request2.V1_2.discoveryBeaconIntervalMs;
     legacy_request->config_nss = 1;
-    legacy_request->nss = hidl_request2.numberOfSpatialStreamsInDiscovery;
+    legacy_request->nss = hidl_request2.V1_2.numberOfSpatialStreamsInDiscovery;
     legacy_request->config_dw_early_termination = 1;
     legacy_request->enable_dw_termination =
-        hidl_request2.enableDiscoveryWindowEarlyTermination;
+        hidl_request2.V1_2.enableDiscoveryWindowEarlyTermination;
     legacy_request->config_enable_ranging = 1;
-    legacy_request->enable_ranging = hidl_request2.enableRanging;
+    legacy_request->enable_ranging = hidl_request2.V1_2.enableRanging;
 
     return true;
 }
@@ -2018,27 +2069,31 @@ bool convertLegacyNanCapabilitiesResponseToHidl(
     }
     *hidl_response = {};
 
-    hidl_response->maxConcurrentClusters =
+    hidl_response->V1_0.maxConcurrentClusters =
         legacy_response.max_concurrent_nan_clusters;
-    hidl_response->maxPublishes = legacy_response.max_publishes;
-    hidl_response->maxSubscribes = legacy_response.max_subscribes;
-    hidl_response->maxServiceNameLen = legacy_response.max_service_name_len;
-    hidl_response->maxMatchFilterLen = legacy_response.max_match_filter_len;
-    hidl_response->maxTotalMatchFilterLen =
+    hidl_response->V1_0.maxPublishes = legacy_response.max_publishes;
+    hidl_response->V1_0.maxSubscribes = legacy_response.max_subscribes;
+    hidl_response->V1_0.maxServiceNameLen =
+        legacy_response.max_service_name_len;
+    hidl_response->V1_0.maxMatchFilterLen =
+        legacy_response.max_match_filter_len;
+    hidl_response->V1_0.maxTotalMatchFilterLen =
         legacy_response.max_total_match_filter_len;
-    hidl_response->maxServiceSpecificInfoLen =
+    hidl_response->V1_0.maxServiceSpecificInfoLen =
         legacy_response.max_service_specific_info_len;
-    hidl_response->maxExtendedServiceSpecificInfoLen =
+    hidl_response->V1_0.maxExtendedServiceSpecificInfoLen =
         legacy_response.max_sdea_service_specific_info_len;
-    hidl_response->maxNdiInterfaces = legacy_response.max_ndi_interfaces;
-    hidl_response->maxNdpSessions = legacy_response.max_ndp_sessions;
-    hidl_response->maxAppInfoLen = legacy_response.max_app_info_len;
-    hidl_response->maxQueuedTransmitFollowupMsgs =
+    hidl_response->V1_0.maxNdiInterfaces = legacy_response.max_ndi_interfaces;
+    hidl_response->V1_0.maxNdpSessions = legacy_response.max_ndp_sessions;
+    hidl_response->V1_0.maxAppInfoLen = legacy_response.max_app_info_len;
+    hidl_response->V1_0.maxQueuedTransmitFollowupMsgs =
         legacy_response.max_queued_transmit_followup_msgs;
-    hidl_response->maxSubscribeInterfaceAddresses =
+    hidl_response->V1_0.maxSubscribeInterfaceAddresses =
         legacy_response.max_subscribe_address;
-    hidl_response->supportedCipherSuites =
+    hidl_response->V1_0.supportedCipherSuites =
         legacy_response.cipher_suites_supported;
+    hidl_response->instantCommunicationModeSupportFlag =
+        legacy_response.is_instant_mode_supported;
 
     return true;
 }
@@ -2729,6 +2784,17 @@ legacy_hal::wifi_interface_type convertHidlIfaceTypeToLegacy(
             return legacy_hal::WIFI_INTERFACE_TYPE_P2P;
         case IfaceType::NAN:
             return legacy_hal::WIFI_INTERFACE_TYPE_NAN;
+    }
+    CHECK(false);
+}
+
+legacy_hal::wifi_multi_sta_use_case convertHidlMultiStaUseCaseToLegacy(
+    IWifiChip::MultiStaUseCase use_case) {
+    switch (use_case) {
+        case IWifiChip::MultiStaUseCase::DUAL_STA_TRANSIENT_PREFER_PRIMARY:
+            return legacy_hal::WIFI_DUAL_STA_TRANSIENT_PREFER_PRIMARY;
+        case IWifiChip::MultiStaUseCase::DUAL_STA_NON_TRANSIENT_UNBIASED:
+            return legacy_hal::WIFI_DUAL_STA_NON_TRANSIENT_UNBIASED;
     }
     CHECK(false);
 }

@@ -15,14 +15,29 @@
  */
 
 #include "DemuxTests.h"
-#include "FilterTests.h"
 #include "FrontendTests.h"
 
 namespace {
 
 void initConfiguration() {
     initFrontendConfig();
+    initFrontendScanConfig();
     initFilterConfig();
+    initDvrConfig();
+}
+
+static AssertionResult success() {
+    return ::testing::AssertionSuccess();
+}
+
+AssertionResult filterDataOutputTestBase(FilterTests tests) {
+    // Data Verify Module
+    std::map<uint64_t, sp<FilterCallback>>::iterator it;
+    std::map<uint64_t, sp<FilterCallback>> filterCallbacks = tests.getFilterCallbacks();
+    for (it = filterCallbacks.begin(); it != filterCallbacks.end(); it++) {
+        it->second->testFilterDataOutput();
+    }
+    return success();
 }
 
 class TunerFilterHidlTest : public testing::TestWithParam<std::string> {
@@ -50,7 +65,61 @@ class TunerFilterHidlTest : public testing::TestWithParam<std::string> {
     FilterTests mFilterTests;
 };
 
-class TunerDemuxHidlTest : public testing::TestWithParam<std::string> {
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerFilterHidlTest);
+
+class TunerRecordHidlTest : public testing::TestWithParam<std::string> {
+  public:
+    virtual void SetUp() override {
+        mService = ITuner::getService(GetParam());
+        ASSERT_NE(mService, nullptr);
+        initConfiguration();
+
+        mFrontendTests.setService(mService);
+        mDemuxTests.setService(mService);
+        mFilterTests.setService(mService);
+        mDvrTests.setService(mService);
+    }
+
+  protected:
+    static void description(const std::string& description) {
+        RecordProperty("description", description);
+    }
+
+    void recordSingleFilterTest(FilterConfig filterConf, FrontendConfig frontendConf,
+                                DvrConfig dvrConf);
+    AssertionResult filterDataOutputTest();
+
+    sp<ITuner> mService;
+    FrontendTests mFrontendTests;
+    DemuxTests mDemuxTests;
+    FilterTests mFilterTests;
+    DvrTests mDvrTests;
+};
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerRecordHidlTest);
+
+class TunerFrontendHidlTest : public testing::TestWithParam<std::string> {
+  public:
+    virtual void SetUp() override {
+        mService = ITuner::getService(GetParam());
+        ASSERT_NE(mService, nullptr);
+        initConfiguration();
+
+        mFrontendTests.setService(mService);
+    }
+
+  protected:
+    static void description(const std::string& description) {
+        RecordProperty("description", description);
+    }
+
+    sp<ITuner> mService;
+    FrontendTests mFrontendTests;
+};
+
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerFrontendHidlTest);
+
+class TunerBroadcastHidlTest : public testing::TestWithParam<std::string> {
   public:
     virtual void SetUp() override {
         mService = ITuner::getService(GetParam());
@@ -71,5 +140,12 @@ class TunerDemuxHidlTest : public testing::TestWithParam<std::string> {
     FrontendTests mFrontendTests;
     DemuxTests mDemuxTests;
     FilterTests mFilterTests;
+
+    AssertionResult filterDataOutputTest();
+
+    void mediaFilterUsingSharedMemoryTest(FilterConfig filterConf, FrontendConfig frontendConf);
 };
+
+// TODO remove from the allow list once the cf tv target is enabled for testing
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerBroadcastHidlTest);
 }  // namespace

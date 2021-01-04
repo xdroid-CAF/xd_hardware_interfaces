@@ -18,10 +18,12 @@
 #define ANDROID_HARDWARE_TV_TUNER_V1_1_FILTER_H_
 
 #include <android/hardware/tv/tuner/1.1/IFilter.h>
+#include <android/hardware/tv/tuner/1.1/IFilterCallback.h>
 #include <fmq/MessageQueue.h>
 #include <inttypes.h>
 #include <ion/ion.h>
 #include <math.h>
+#include <sys/stat.h>
 #include <set>
 #include "Demux.h"
 #include "Dvr.h"
@@ -42,6 +44,7 @@ using ::android::hardware::MessageQueue;
 using ::android::hardware::MQDescriptorSync;
 
 using FilterMQ = MessageQueue<uint8_t, kSynchronizedReadWrite>;
+const uint32_t BUFFER_SIZE_16M = 0x1000000;
 
 class Demux;
 class Dvr;
@@ -75,6 +78,14 @@ class Filter : public V1_1::IFilter {
 
     virtual Return<Result> close() override;
 
+    virtual Return<Result> configureIpCid(uint32_t ipCid) override;
+
+    virtual Return<void> getAvSharedHandle(getAvSharedHandle_cb _hidl_cb) override;
+
+    virtual Return<Result> configureAvStreamType(const V1_1::AvStreamType& avStreamType) override;
+
+    virtual Return<Result> configureScramblingEvent(uint32_t statuses) override;
+
     /**
      * To create a FilterMQ and its Event Flag.
      *
@@ -90,6 +101,7 @@ class Filter : public V1_1::IFilter {
     void attachFilterToRecord(const sp<Dvr> dvr);
     void detachFilterFromRecord();
     void freeAvHandle();
+    void freeSharedAvHandle();
     bool isMediaFilter() { return mIsMediaFilter; };
     bool isPcrFilter() { return mIsPcrFilter; };
     bool isRecordFilter() { return mIsRecordFilter; };
@@ -102,9 +114,15 @@ class Filter : public V1_1::IFilter {
     /**
      * Filter callbacks used on filter events or FMQ status
      */
-    sp<IFilterCallback> mCallback;
+    sp<IFilterCallback> mCallback = nullptr;
+
+    /**
+     * V1_1 Filter callbacks used on filter events or FMQ status
+     */
+    sp<V1_1::IFilterCallback> mCallback_1_1 = nullptr;
 
     uint64_t mFilterId;
+    uint32_t mCid = static_cast<uint32_t>(V1_1::Constant::INVALID_IP_FILTER_CONTEXT_ID);
     uint32_t mBufferSize;
     DemuxFilterType mType;
     bool mIsMediaFilter = false;
@@ -122,6 +140,7 @@ class Filter : public V1_1::IFilter {
     bool mIsUsingFMQ = false;
     EventFlag* mFilterEventFlag;
     DemuxFilterEvent mFilterEvent;
+    V1_1::DemuxFilterEventExt mFilterEventExt;
 
     // Thread handlers
     pthread_t mFilterThread;
@@ -175,6 +194,9 @@ class Filter : public V1_1::IFilter {
     uint8_t* getIonBuffer(int fd, int size);
     native_handle_t* createNativeHandle(int fd);
     Result createMediaFilterEventWithIon(vector<uint8_t> output);
+    Result createIndependentMediaEvents(vector<uint8_t> output);
+    Result createShareMemMediaEvents(vector<uint8_t> output);
+    bool sameFile(int fd1, int fd2);
 
     /**
      * Lock to protect writes to the FMQs
@@ -202,6 +224,17 @@ class Filter : public V1_1::IFilter {
     std::map<uint64_t, int> mDataId2Avfd;
     uint64_t mLastUsedDataId = 1;
     int mAvBufferCopyCount = 0;
+
+    // Shared A/V memory handle
+    hidl_handle mSharedAvMemHandle;
+    bool mUsingSharedAvMem = false;
+    uint32_t mSharedAvMemOffset = 0;
+
+    uint32_t mAudioStreamType;
+    uint32_t mVideoStreamType;
+
+    // Scrambling status to be monitored
+    uint32_t mStatuses = 0;
 };
 
 }  // namespace implementation

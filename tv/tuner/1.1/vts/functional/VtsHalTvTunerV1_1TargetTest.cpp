@@ -18,6 +18,14 @@
 
 namespace {
 
+AssertionResult TunerBroadcastHidlTest::filterDataOutputTest() {
+    return filterDataOutputTestBase(mFilterTests);
+}
+
+AssertionResult TunerRecordHidlTest::filterDataOutputTest() {
+    return filterDataOutputTestBase(mFilterTests);
+}
+
 void TunerFilterHidlTest::configSingleFilterInDemuxTest(FilterConfig filterConf,
                                                         FrontendConfig frontendConf) {
     uint32_t feId;
@@ -35,6 +43,12 @@ void TunerFilterHidlTest::configSingleFilterInDemuxTest(FilterConfig filterConf,
     ASSERT_TRUE(mFilterTests.openFilterInDemux(filterConf.type, filterConf.bufferSize));
     ASSERT_TRUE(mFilterTests.getNewlyOpenedFilterId_64bit(filterId));
     ASSERT_TRUE(mFilterTests.configFilter(filterConf.settings, filterId));
+    if (filterConf.type.mainType == DemuxFilterMainType::IP) {
+        ASSERT_TRUE(mFilterTests.configIpFilterCid(filterConf.ipCid, filterId));
+    }
+    if (filterConf.statuses > 0) {
+        ASSERT_TRUE(mFilterTests.configureScramblingEvent(filterId, filterConf.statuses));
+    }
     ASSERT_TRUE(mFilterTests.getFilterMQDescriptor(filterId));
     ASSERT_TRUE(mFilterTests.startFilter(filterId));
     ASSERT_TRUE(mFilterTests.stopFilter(filterId));
@@ -43,37 +57,79 @@ void TunerFilterHidlTest::configSingleFilterInDemuxTest(FilterConfig filterConf,
     ASSERT_TRUE(mFrontendTests.closeFrontend());
 }
 
-TEST_P(TunerDemuxHidlTest, getAvSyncTime) {
-    description("Get the A/V sync time from a PCR filter.");
+void TunerBroadcastHidlTest::mediaFilterUsingSharedMemoryTest(FilterConfig filterConf,
+                                                              FrontendConfig frontendConf) {
     uint32_t feId;
     uint32_t demuxId;
     sp<IDemux> demux;
-    uint64_t mediaFilterId;
-    uint64_t pcrFilterId;
-    uint64_t avSyncHwId;
-    sp<IFilter> mediaFilter;
+    uint64_t filterId;
 
-    mFrontendTests.getFrontendIdByType(frontendArray[DVBT].type, feId);
+    mFrontendTests.getFrontendIdByType(frontendConf.type, feId);
+    ASSERT_TRUE(feId != INVALID_ID);
+    ASSERT_TRUE(mFrontendTests.openFrontendById(feId));
+    ASSERT_TRUE(mFrontendTests.setFrontendCallback());
+    ASSERT_TRUE(mDemuxTests.openDemux(demux, demuxId));
+    ASSERT_TRUE(mDemuxTests.setDemuxFrontendDataSource(feId));
+    mFrontendTests.setDemux(demux);
+    mFilterTests.setDemux(demux);
+    ASSERT_TRUE(mFilterTests.openFilterInDemux(filterConf.type, filterConf.bufferSize));
+    ASSERT_TRUE(mFilterTests.getNewlyOpenedFilterId_64bit(filterId));
+    ASSERT_TRUE(mFilterTests.getSharedAvMemoryHandle(filterId));
+    ASSERT_TRUE(mFilterTests.configFilter(filterConf.settings, filterId));
+    ASSERT_TRUE(mFilterTests.configAvFilterStreamType(filterConf.streamType, filterId));
+    ASSERT_TRUE(mFilterTests.getFilterMQDescriptor(filterId));
+    ASSERT_TRUE(mFilterTests.startFilter(filterId));
+    // tune test
+    ASSERT_TRUE(mFrontendTests.tuneFrontend(frontendConf, true /*testWithDemux*/));
+    ASSERT_TRUE(filterDataOutputTest());
+    ASSERT_TRUE(mFrontendTests.stopTuneFrontend(true /*testWithDemux*/));
+    ASSERT_TRUE(mFilterTests.stopFilter(filterId));
+    ASSERT_TRUE(mFilterTests.releaseShareAvHandle(filterId));
+    ASSERT_TRUE(mFilterTests.closeFilter(filterId));
+    ASSERT_TRUE(mDemuxTests.closeDemux());
+    ASSERT_TRUE(mFrontendTests.closeFrontend());
+}
+
+void TunerRecordHidlTest::recordSingleFilterTest(FilterConfig filterConf,
+                                                 FrontendConfig frontendConf, DvrConfig dvrConf) {
+    uint32_t feId;
+    uint32_t demuxId;
+    sp<IDemux> demux;
+    uint64_t filterId;
+    sp<IFilter> filter;
+
+    mFrontendTests.getFrontendIdByType(frontendConf.type, feId);
     ASSERT_TRUE(feId != INVALID_ID);
     ASSERT_TRUE(mFrontendTests.openFrontendById(feId));
     ASSERT_TRUE(mFrontendTests.setFrontendCallback());
     ASSERT_TRUE(mDemuxTests.openDemux(demux, demuxId));
     ASSERT_TRUE(mDemuxTests.setDemuxFrontendDataSource(feId));
     mFilterTests.setDemux(demux);
-    ASSERT_TRUE(mFilterTests.openFilterInDemux(filterArray[TS_VIDEO1].type,
-                                               filterArray[TS_VIDEO1].bufferSize));
-    ASSERT_TRUE(mFilterTests.getNewlyOpenedFilterId_64bit(mediaFilterId));
-    ASSERT_TRUE(mFilterTests.configFilter(filterArray[TS_VIDEO1].settings, mediaFilterId));
-    mediaFilter = mFilterTests.getFilterById(mediaFilterId);
-    ASSERT_TRUE(mFilterTests.openFilterInDemux(filterArray[TS_PCR0].type,
-                                               filterArray[TS_PCR0].bufferSize));
-    ASSERT_TRUE(mFilterTests.getNewlyOpenedFilterId_64bit(pcrFilterId));
-    ASSERT_TRUE(mFilterTests.configFilter(filterArray[TS_PCR0].settings, pcrFilterId));
-    ASSERT_TRUE(mDemuxTests.getAvSyncId_64bit(mediaFilter, avSyncHwId));
-    ASSERT_TRUE(pcrFilterId == avSyncHwId);
-    ASSERT_TRUE(mDemuxTests.getAvSyncTime(pcrFilterId));
-    ASSERT_TRUE(mFilterTests.closeFilter(pcrFilterId));
-    ASSERT_TRUE(mFilterTests.closeFilter(mediaFilterId));
+    mDvrTests.setDemux(demux);
+    mFrontendTests.setDvrTests(mDvrTests);
+    ASSERT_TRUE(mDvrTests.openDvrInDemux(dvrConf.type, dvrConf.bufferSize));
+    ASSERT_TRUE(mDvrTests.configDvrRecord(dvrConf.settings));
+    ASSERT_TRUE(mDvrTests.getDvrRecordMQDescriptor());
+    ASSERT_TRUE(mFilterTests.openFilterInDemux(filterConf.type, filterConf.bufferSize));
+    ASSERT_TRUE(mFilterTests.getNewlyOpenedFilterId_64bit(filterId));
+    ASSERT_TRUE(mFilterTests.configFilter(filterConf.settings, filterId));
+    ASSERT_TRUE(mFilterTests.getFilterMQDescriptor(filterId));
+    filter = mFilterTests.getFilterById(filterId);
+    ASSERT_TRUE(filter != nullptr);
+    mDvrTests.startRecordOutputThread(dvrConf.settings.record());
+    ASSERT_TRUE(mDvrTests.attachFilterToDvr(filter));
+    ASSERT_TRUE(mDvrTests.startDvrRecord());
+    ASSERT_TRUE(mFilterTests.startFilter(filterId));
+    ASSERT_TRUE(mFrontendTests.tuneFrontend(frontendConf, true /*testWithDemux*/));
+    mDvrTests.testRecordOutput();
+    ASSERT_TRUE(filterDataOutputTest());
+    mDvrTests.stopRecordThread();
+    ASSERT_TRUE(mFrontendTests.stopTuneFrontend(true /*testWithDemux*/));
+    ASSERT_TRUE(mFilterTests.stopFilter(filterId));
+    ASSERT_TRUE(mDvrTests.stopDvrRecord());
+    ASSERT_TRUE(mDvrTests.detachFilterToDvr(filter));
+    ASSERT_TRUE(mFilterTests.closeFilter(filterId));
+    mDvrTests.closeDvrRecord();
     ASSERT_TRUE(mDemuxTests.closeDemux());
     ASSERT_TRUE(mFrontendTests.closeFrontend());
 }
@@ -84,16 +140,54 @@ TEST_P(TunerFilterHidlTest, StartFilterInDemux) {
     configSingleFilterInDemuxTest(filterArray[TS_VIDEO0], frontendArray[DVBT]);
 }
 
+TEST_P(TunerFilterHidlTest, ConfigIpFilterInDemuxWithCid) {
+    description("Open and configure an ip filter in Demux.");
+    // TODO use parameterized tests
+    configSingleFilterInDemuxTest(filterArray[IP_IP0], frontendArray[DVBT]);
+}
+
+TEST_P(TunerRecordHidlTest, RecordDataFlowWithTsRecordFilterTest) {
+    description("Feed ts data from frontend to recording and test with ts record filter");
+    recordSingleFilterTest(filterArray[TS_RECORD0], frontendArray[DVBT], dvrArray[DVR_RECORD0]);
+}
+
+TEST_P(TunerFrontendHidlTest, TuneFrontendWithFrontendSettingsExt1_1) {
+    description("Tune one Frontend with v1_1 extended setting and check Lock event");
+    mFrontendTests.tuneTest(frontendArray[DVBT]);
+}
+
+TEST_P(TunerFrontendHidlTest, BlindScanFrontendWithEndFrequency) {
+    description("Run an blind frontend scan with v1_1 extended setting and check lock scanMessage");
+    mFrontendTests.scanTest(frontendScanArray[SCAN_DVBT], FrontendScanType::SCAN_BLIND);
+}
+
+TEST_P(TunerBroadcastHidlTest, MediaFilterWithSharedMemoryHandle) {
+    description("Test the Media Filter with shared memory handle");
+    mediaFilterUsingSharedMemoryTest(filterArray[TS_VIDEO0], frontendArray[DVBT]);
+}
+
+TEST_P(TunerFrontendHidlTest, GetFrontendDtmbCaps) {
+    description("Test to query Dtmb frontend caps if exists");
+    mFrontendTests.getFrontendDtmbCapsTest();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+        PerInstance, TunerBroadcastHidlTest,
+        testing::ValuesIn(android::hardware::getAllHalInstanceNames(ITuner::descriptor)),
+        android::hardware::PrintInstanceNameToString);
+
+INSTANTIATE_TEST_SUITE_P(
+        PerInstance, TunerFrontendHidlTest,
+        testing::ValuesIn(android::hardware::getAllHalInstanceNames(ITuner::descriptor)),
+        android::hardware::PrintInstanceNameToString);
+
 INSTANTIATE_TEST_SUITE_P(
         PerInstance, TunerFilterHidlTest,
         testing::ValuesIn(android::hardware::getAllHalInstanceNames(ITuner::descriptor)),
         android::hardware::PrintInstanceNameToString);
 
 INSTANTIATE_TEST_SUITE_P(
-        PerInstance, TunerDemuxHidlTest,
+        PerInstance, TunerRecordHidlTest,
         testing::ValuesIn(android::hardware::getAllHalInstanceNames(ITuner::descriptor)),
         android::hardware::PrintInstanceNameToString);
-
-GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerFilterHidlTest);
-GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(TunerDemuxHidlTest);
 }  // namespace

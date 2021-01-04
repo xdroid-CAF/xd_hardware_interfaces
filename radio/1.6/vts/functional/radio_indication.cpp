@@ -19,6 +19,16 @@
 RadioIndication_v1_6::RadioIndication_v1_6(RadioHidlTest_v1_6& parent) : parent_v1_6(parent) {}
 
 /* 1.6 Apis */
+Return<void> RadioIndication_v1_6::dataCallListChanged_1_6(
+        RadioIndicationType /*type*/,
+        const hidl_vec<android::hardware::radio::V1_6::SetupDataCallResult>& /*dcList*/) {
+    return Void();
+}
+
+Return<void> RadioIndication_v1_6::unthrottleApn(RadioIndicationType /*type*/,
+                                                 const ::android::hardware::hidl_string& /*apn*/) {
+    return Void();
+}
 
 /* 1.5 Apis */
 Return<void> RadioIndication_v1_6::uiccApplicationsEnablementChanged(RadioIndicationType /*type*/,
@@ -111,6 +121,12 @@ Return<void> RadioIndication_v1_6::cellInfoList_1_2(
 Return<void> RadioIndication_v1_6::currentLinkCapacityEstimate(
         RadioIndicationType /*type*/,
         const ::android::hardware::radio::V1_2::LinkCapacityEstimate& /*lce*/) {
+    return Void();
+}
+
+Return<void> RadioIndication_v1_6::currentLinkCapacityEstimate_1_6(
+        RadioIndicationType /*type*/,
+        const ::android::hardware::radio::V1_6::LinkCapacityEstimate& /*lce*/) {
     return Void();
 }
 

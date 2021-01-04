@@ -17,6 +17,7 @@
 #pragma once
 
 #include <android/hardware/gnss/2.1/IGnss.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <hidl/MQDescriptor.h>
 #include <hidl/Status.h>
@@ -32,6 +33,7 @@
 #include "GnssDebug.h"
 #include "GnssMeasurement.h"
 #include "GnssMeasurementCorrections.h"
+#include "MockLocation.h"
 #include "NmeaFixInfo.h"
 #include "Utils.h"
 
@@ -112,11 +114,16 @@ struct GnssTemplate : public T_IGnss {
     getExtensionMeasurementCorrections_1_1() override;
     Return<sp<V2_1::IGnssAntennaInfo>> getExtensionGnssAntennaInfo() override;
 
+    Return<void> debug(const hidl_handle& fd, const hidl_vec<hidl_string>& options) override;
+
   private:
     std::unique_ptr<V2_0::GnssLocation> getLocationFromHW();
     void reportLocation(const V2_0::GnssLocation&) const;
     void reportLocation(const V1_0::GnssLocation&) const;
     void reportSvStatus(const hidl_vec<GnssSvInfo>&) const;
+
+    Return<void> help(const hidl_handle& fd);
+    Return<void> setLocation(const hidl_handle& fd, const hidl_vec<hidl_string>& options);
 
     static sp<V2_1::IGnssCallback> sGnssCallback_2_1;
     static sp<V2_0::IGnssCallback> sGnssCallback_2_0;
@@ -126,12 +133,13 @@ struct GnssTemplate : public T_IGnss {
     std::atomic<long> mMinIntervalMs;
     sp<GnssConfiguration> mGnssConfiguration;
     std::atomic<bool> mIsActive;
-    std::atomic<bool> mHardwareModeOn;
+    std::atomic<bool> mHardwareModeChecked;
     std::atomic<int> mGnssFd;
     std::thread mThread;
 
     mutable std::mutex mMutex;
-    hidl_vec<GnssSvInfo> filterBlacklistedSatellitesV2_1(hidl_vec<GnssSvInfo> gnssSvInfoList);
+    virtual hidl_vec<GnssSvInfo> filterBlocklistedSatellitesV2_1(
+            hidl_vec<GnssSvInfo> gnssSvInfoList);
 };
 
 template <class T_IGnss>
@@ -147,7 +155,7 @@ template <class T_IGnss>
 GnssTemplate<T_IGnss>::GnssTemplate()
     : mMinIntervalMs(1000),
       mGnssConfiguration{new GnssConfiguration()},
-      mHardwareModeOn(false),
+      mHardwareModeChecked(false),
       mGnssFd(-1) {}
 
 template <class T_IGnss>
@@ -158,14 +166,18 @@ GnssTemplate<T_IGnss>::~GnssTemplate() {
 template <class T_IGnss>
 std::unique_ptr<V2_0::GnssLocation> GnssTemplate<T_IGnss>::getLocationFromHW() {
     char inputBuffer[INPUT_BUFFER_SIZE];
-    mHardwareModeOn = false;
-    if (mGnssFd == -1) {
+    if (!mHardwareModeChecked) {
         mGnssFd = open(GNSS_PATH, O_RDWR | O_NONBLOCK);
+        if (mGnssFd == -1) {
+            ALOGW("Failed to open /dev/gnss0 errno: %d", errno);
+        }
+        mHardwareModeChecked = true;
     }
+
     if (mGnssFd == -1) {
         return nullptr;
     }
-    // Send control message to device
+
     int bytes_write = write(mGnssFd, CMD_GET_LOCATION, strlen(CMD_GET_LOCATION));
     if (bytes_write <= 0) {
         return nullptr;
@@ -179,8 +191,7 @@ std::unique_ptr<V2_0::GnssLocation> GnssTemplate<T_IGnss>::getLocationFromHW() {
     int bytes_read = -1;
     std::string inputStr = "";
     int epoll_ret = epoll_wait(epoll_fd, events, 1, mMinIntervalMs);
-    // Indicates it is a hardwareMode, don't need to wait outside.
-    mHardwareModeOn = true;
+
     if (epoll_ret == -1) {
         return nullptr;
     }
@@ -204,11 +215,11 @@ Return<bool> GnssTemplate<T_IGnss>::start() {
     mIsActive = true;
     mThread = std::thread([this]() {
         while (mIsActive == true) {
-            auto svStatus = filterBlacklistedSatellitesV2_1(Utils::getMockSvInfoListV2_1());
+            auto svStatus = filterBlocklistedSatellitesV2_1(Utils::getMockSvInfoListV2_1());
             this->reportSvStatus(svStatus);
-
             auto currentLocation = getLocationFromHW();
-            if (currentLocation != nullptr) {
+            if (mGnssFd != -1 && currentLocation != nullptr) {
+                // Only report location if the return from hardware is valid
                 this->reportLocation(*currentLocation);
             } else {
                 if (sGnssCallback_2_1 != nullptr || sGnssCallback_2_0 != nullptr) {
@@ -218,21 +229,17 @@ Return<bool> GnssTemplate<T_IGnss>::start() {
                     const auto location = Utils::getMockLocationV1_0();
                     this->reportLocation(location);
                 }
-
-                // Only need do the sleep in the static location mode, which mocks the "wait
-                // for" hardware behavior.
-                if (!mHardwareModeOn) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(mMinIntervalMs));
-                }
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(mMinIntervalMs));
         }
     });
     return true;
 }
 
 template <class T_IGnss>
-hidl_vec<GnssSvInfo> GnssTemplate<T_IGnss>::filterBlacklistedSatellitesV2_1(
+hidl_vec<GnssSvInfo> GnssTemplate<T_IGnss>::filterBlocklistedSatellitesV2_1(
         hidl_vec<GnssSvInfo> gnssSvInfoList) {
+    ALOGD("filterBlocklistedSatellitesV2_1");
     for (uint32_t i = 0; i < gnssSvInfoList.size(); i++) {
         if (mGnssConfiguration->isBlacklistedV2_1(gnssSvInfoList[i])) {
             gnssSvInfoList[i].v2_0.v1_0.svFlag &=
@@ -636,6 +643,76 @@ void GnssTemplate<T_IGnss>::reportLocation(const V2_0::GnssLocation& location) c
     if (!ret.isOk()) {
         ALOGE("%s: Unable to invoke callback v2.0", __func__);
     }
+}
+
+template <class T_IGnss>
+Return<void> GnssTemplate<T_IGnss>::setLocation(const hidl_handle& fd,
+                                                const hidl_vec<hidl_string>& options) {
+    auto lat = gMockLatitudeDegrees;
+    auto lon = gMockLongitudeDegrees;
+    auto ele = gMockAltitudeMeters;
+    auto bea = gMockBearingDegrees;
+    auto spd = gMockSpeedMetersPerSec;
+
+    for (size_t i = 1; i < options.size(); ++i) {
+        std::string option = options[i];
+        if (option.rfind("lat=", 0) == 0) {
+            option = option.substr(4);
+            lat = stof(option);
+        } else if (option.rfind("lon=", 0) == 0) {
+            option = option.substr(4);
+            lon = stof(option);
+        } else if (option.rfind("ele=", 0) == 0) {
+            option = option.substr(4);
+            ele = stof(option);
+        } else if (option.rfind("bea=", 0) == 0) {
+            option = option.substr(4);
+            bea = stof(option);
+        } else if (option.rfind("spd=", 0) == 0) {
+            option = option.substr(4);
+            spd = stof(option);
+        } else {
+            dprintf(fd->data[0], "unsupported location argument: %s\n", option.c_str());
+        }
+    }
+
+    gMockLatitudeDegrees = lat;
+    gMockLongitudeDegrees = lon;
+    gMockAltitudeMeters = ele;
+    gMockBearingDegrees = bea;
+    gMockSpeedMetersPerSec = spd;
+
+    dprintf(fd->data[0], "mock location updated to lat=%f lon=%f ele=%f bea=%f spd=%f\n",
+            gMockLatitudeDegrees, gMockLongitudeDegrees, gMockAltitudeMeters, gMockBearingDegrees,
+            gMockSpeedMetersPerSec);
+
+    return Void();
+}
+
+template <class T_IGnss>
+Return<void> GnssTemplate<T_IGnss>::help(const hidl_handle& fd) {
+    dprintf(fd->data[0],
+            "invalid option for Gnss HAL; valid options are:\n"
+            "location [lat=..] [lon=..] [ele=..] [bea=..] [spd=..]\n");
+    return Void();
+}
+
+template <class T_IGnss>
+Return<void> GnssTemplate<T_IGnss>::debug(const hidl_handle& fd,
+                                          const hidl_vec<hidl_string>& options) {
+    if (fd == nullptr || fd->numFds == 0) {
+        return Void();
+    }
+
+    if (options.size() == 0) {
+        return help(fd);
+    } else if (options[0] == "location") {
+        return setLocation(fd, options);
+    } else {
+        return help(fd);
+    }
+
+    return Void();
 }
 
 }  // namespace android::hardware::gnss::common::implementation
