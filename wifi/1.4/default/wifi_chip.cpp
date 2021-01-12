@@ -901,6 +901,7 @@ WifiStatus WifiChip::removeApIfaceInternal(const std::string& ifname) {
     // here and not make that assumption all over the place.
     invalidateAndRemoveDependencies(ifname);
     if (findUsingName(created_ap_ifaces_, ifname) != nullptr) {
+        iface_util_.lock()->setUpState(ifname, false);
         legacy_hal::wifi_error legacy_status =
             legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
@@ -1075,6 +1076,7 @@ WifiStatus WifiChip::removeStaIfaceInternal(const std::string& ifname) {
     // Invalidate & remove any dependent objects first.
     invalidateAndRemoveDependencies(ifname);
     if (findUsingName(created_sta_ifaces_, ifname) != nullptr) {
+        iface_util_.lock()->setUpState(ifname, false);
         legacy_hal::wifi_error legacy_status =
             legacy_hal_.lock()->deleteVirtualInterface(ifname);
         if (legacy_status != legacy_hal::WIFI_SUCCESS) {
