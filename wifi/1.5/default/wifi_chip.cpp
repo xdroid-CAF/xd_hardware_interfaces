@@ -1875,7 +1875,6 @@ std::vector<std::string> WifiChip::allocateBridgedApInstanceNames() {
         }
     }
     return instances;
->>>>>>> 100e1daf236d8728f19594c864106e85c152fcea
 }
 
 // STA iface names start with idx 0.
