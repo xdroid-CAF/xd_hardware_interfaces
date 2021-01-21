@@ -793,11 +793,21 @@ class RadioResponse_v1_6 : public ::android::hardware::radio::V1_6::IRadioRespon
     Return<void> setAllowedNetworkTypeBitmapResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
 
+    Return<void> getAllowedNetworkTypeBitmapResponse(
+            const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+            const ::android::hardware::hidl_bitfield<
+                    ::android::hardware::radio::V1_4::RadioAccessFamily>
+                    networkTypeBitmap);
+
     Return<void> setDataThrottlingResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
 
     Return<void> getSystemSelectionChannelsResponse(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info);
+
+    Return<void> getSignalStrengthResponse_1_6(
+            const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+            const ::android::hardware::radio::V1_6::SignalStrength& sig_strength);
 
     Return<void> getCellInfoListResponse_1_6(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
@@ -811,6 +821,10 @@ class RadioResponse_v1_6 : public ::android::hardware::radio::V1_6::IRadioRespon
     Return<void> getDataRegistrationStateResponse_1_6(
             const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
             const ::android::hardware::radio::V1_6::RegStateResult& regResponse);
+
+    Return<void> getCurrentCallsResponse_1_6(
+            const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+            const ::android::hardware::hidl_vec<::android::hardware::radio::V1_6::Call>& calls);
 };
 
 /* Callback class for radio indication */
@@ -829,6 +843,10 @@ class RadioIndication_v1_6 : public ::android::hardware::radio::V1_6::IRadioIndi
 
     Return<void> unthrottleApn(RadioIndicationType type,
                                const ::android::hardware::hidl_string& apn);
+
+    Return<void> currentSignalStrength_1_6(
+            RadioIndicationType type,
+            const ::android::hardware::radio::V1_6::SignalStrength& signalStrength);
 
     Return<void> networkScanResult_1_6(
             RadioIndicationType type,

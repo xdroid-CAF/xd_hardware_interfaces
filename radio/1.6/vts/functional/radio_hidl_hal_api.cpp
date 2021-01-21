@@ -56,8 +56,12 @@ TEST_P(RadioHidlTest_v1_6, setupDataCall_1_6) {
     ::android::hardware::radio::V1_2::DataRequestReason reason =
             ::android::hardware::radio::V1_2::DataRequestReason::NORMAL;
 
-    Return<void> res = radio_v1_6->setupDataCall_1_6(serial, accessNetwork, dataProfileInfo,
-                                                     roamingAllowed, reason, addresses, dnses, -1);
+    ::android::hardware::radio::V1_6::OptionalSliceInfo optionalSliceInfo;
+    memset(&optionalSliceInfo, 0, sizeof(optionalSliceInfo));
+
+    Return<void> res =
+            radio_v1_6->setupDataCall_1_6(serial, accessNetwork, dataProfileInfo, roamingAllowed,
+                                          reason, addresses, dnses, -1, optionalSliceInfo);
     ASSERT_OK(res);
 
     EXPECT_EQ(std::cv_status::no_timeout, wait());
@@ -405,4 +409,16 @@ TEST_P(RadioHidlTest_v1_6, setSimCardPower_1_6) {
         updateSimCardStatus();
         EXPECT_EQ(CardState::PRESENT, cardStatus.base.base.base.cardState);
     }
+}
+
+/*
+ * Test IRadio.getCurrentCalls_1_6() for the response returned.
+ */
+TEST_P(RadioHidlTest_v1_6, getCurrentCalls_1_6) {
+    serial = GetRandomSerialNumber();
+    radio_v1_6->getCurrentCalls_1_6(serial);
+    EXPECT_EQ(std::cv_status::no_timeout, wait());
+    EXPECT_EQ(RadioResponseType::SOLICITED, radioRsp_v1_6->rspInfo.type);
+    EXPECT_EQ(serial, radioRsp_v1_6->rspInfo.serial);
+    EXPECT_EQ(::android::hardware::radio::V1_6::RadioError::NONE, radioRsp_v1_6->rspInfo.error);
 }
