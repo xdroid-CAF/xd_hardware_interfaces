@@ -2,13 +2,14 @@
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
-// This file is a snapshot of an AIDL interface (or parcelable). Do not try to
-// edit this file. It looks like you are doing that because you have modified
-// an AIDL interface in a backward-incompatible way, e.g., deleting a function
-// from an interface or a field from a parcelable and it broke the build. That
-// breakage is intended.
+// This file is a snapshot of an AIDL file. Do not edit it manually. There are
+// two cases:
+// 1). this is a frozen version file - do not edit this in any case.
+// 2). this is a 'current' file. If you make a backwards compatible change to
+//     the interface (from the latest frozen version), the build system will
+//     prompt you to update this file with `m <name>-update-api`.
 //
-// You must not make a backward incompatible changes to the AIDL files built
+// You must not make a backward incompatible change to any AIDL file built
 // with the aidl_interface module type with versions property set. The module
 // type is used to build AIDL files in a way that they can be used across
 // independently updatable components of the system. If a device is shipped
@@ -30,6 +31,7 @@ enum Tag {
   EC_CURVE = 268435466,
   RSA_PUBLIC_EXPONENT = 1342177480,
   INCLUDE_UNIQUE_ID = 1879048394,
+  RSA_OAEP_MGF_DIGEST = 536871115,
   BLOB_USAGE_REQUIREMENTS = 268435757,
   BOOTLOADER_ONLY = 1879048494,
   ROLLBACK_RESISTANCE = 1879048495,
