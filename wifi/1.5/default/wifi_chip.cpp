@@ -732,6 +732,13 @@ Return<void> WifiChip::setCoexUnsafeChannels(
                            hidl_status_cb, unsafeChannels, restrictions);
 }
 
+Return<void> WifiChip::setCountryCode(const hidl_array<int8_t, 2>& code,
+                                      setCountryCode_cb hidl_status_cb) {
+    return validateAndCall(this, WifiStatusCode::ERROR_WIFI_IFACE_INVALID,
+                           &WifiChip::setCountryCodeInternal, hidl_status_cb,
+                           code);
+}
+
 void WifiChip::QcRemoveAndClearDynamicIfaces() {
     for (const auto& iface : created_ap_ifaces_) {
         std::string ifname = iface->getName();
@@ -1070,7 +1077,7 @@ WifiStatus WifiChip::removeIfaceInstanceFromBridgedApIfaceInternal(
     const std::string& ifname, const std::string& ifInstanceName) {
     legacy_hal::wifi_error legacy_status;
     const auto iface = findUsingName(ap_ifaces_, ifname);
-    if (!iface.get() || !ifInstanceName.empty()) {
+    if (!iface.get() || ifInstanceName.empty()) {
         return createWifiStatus(WifiStatusCode::ERROR_INVALID_ARGS);
     }
     // Requires to remove one of the instance in bridge mode
@@ -1525,6 +1532,12 @@ WifiStatus WifiChip::setCoexUnsafeChannelsInternal(
     return createWifiStatusFromLegacyError(legacy_status);
 }
 
+WifiStatus WifiChip::setCountryCodeInternal(const std::array<int8_t, 2>& code) {
+    auto legacy_status =
+        legacy_hal_.lock()->setCountryCode(getFirstActiveWlanIfaceName(), code);
+    return createWifiStatusFromLegacyError(legacy_status);
+}
+
 WifiStatus WifiChip::handleChipConfiguration(
     /* NONNULL */ std::unique_lock<std::recursive_mutex>* lock,
     ChipModeId mode_id) {
@@ -1842,7 +1855,16 @@ bool WifiChip::isDualStaConcurrencyAllowedInCurrentMode() {
 
 std::string WifiChip::getFirstActiveWlanIfaceName() {
     if (sta_ifaces_.size() > 0) return sta_ifaces_[0]->getName();
-    if (ap_ifaces_.size() > 0) return ap_ifaces_[0]->getName();
+    if (ap_ifaces_.size() > 0) {
+        // If the first active wlan iface is bridged iface.
+        // Return first instance name.
+        for (auto const& it : br_ifaces_ap_instances_) {
+            if (it.first == ap_ifaces_[0]->getName()) {
+                return it.second[0];
+            }
+        }
+        return ap_ifaces_[0]->getName();
+    }
     // This could happen if the chip call is made before any STA/AP
     // iface is created. Default to wlan0 for such cases.
     LOG(WARNING) << "No active wlan interfaces in use! Using default";

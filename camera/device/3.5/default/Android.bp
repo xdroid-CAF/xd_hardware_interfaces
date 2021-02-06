@@ -59,6 +59,7 @@ cc_library_shared {
         "android.hardware.camera.common@1.0-helper",
     ],
     local_include_dirs: ["include/device_v3_5_impl"],
+    sdclang: false, // See b/163842697
 }
 
 cc_library_shared {
@@ -103,4 +104,5 @@ cc_library_shared {
     export_shared_lib_headers: [
         "libfmq",
     ],
+    sdclang: false, // See b/163842697
 }
