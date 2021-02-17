@@ -117,8 +117,8 @@ std::vector<std::string> getPredefinedApIfaceNames(bool is_bridged) {
     ifnames.push_back(buffer.data());
     if (is_bridged) {
         buffer.fill(0);
-        if (property_get("ro.vendor.wifi.sap.concurrent.interface",
-                         buffer.data(), nullptr) == 0) {
+        if (property_get("ro.vendor.wifi.sap.concurrent.iface", buffer.data(),
+                         nullptr) == 0) {
             return ifnames;
         }
         ifnames.push_back(buffer.data());
@@ -721,6 +721,15 @@ Return<void> WifiChip::setMultiStaUseCase(
     return validateAndCall(this, WifiStatusCode::ERROR_WIFI_CHIP_INVALID,
                            &WifiChip::setMultiStaUseCaseInternal,
                            hidl_status_cb, use_case);
+}
+
+Return<void> WifiChip::setCoexUnsafeChannels(
+    const hidl_vec<CoexUnsafeChannel>& unsafeChannels,
+    hidl_bitfield<CoexRestriction> restrictions,
+    setCoexUnsafeChannels_cb hidl_status_cb) {
+    return validateAndCall(this, WifiStatusCode::ERROR_WIFI_CHIP_INVALID,
+                           &WifiChip::setCoexUnsafeChannelsInternal,
+                           hidl_status_cb, unsafeChannels, restrictions);
 }
 
 void WifiChip::QcRemoveAndClearDynamicIfaces() {
@@ -1494,6 +1503,28 @@ WifiStatus WifiChip::setMultiStaUseCaseInternal(MultiStaUseCase use_case) {
     return createWifiStatusFromLegacyError(legacy_status);
 }
 
+WifiStatus WifiChip::setCoexUnsafeChannelsInternal(
+    std::vector<CoexUnsafeChannel> unsafe_channels, uint32_t restrictions) {
+    std::vector<legacy_hal::wifi_coex_unsafe_channel> legacy_unsafe_channels;
+    if (!hidl_struct_util::convertHidlVectorOfCoexUnsafeChannelToLegacy(
+            unsafe_channels, &legacy_unsafe_channels)) {
+        return createWifiStatus(WifiStatusCode::ERROR_INVALID_ARGS);
+    }
+    uint32_t legacy_restrictions = 0;
+    if (restrictions & CoexRestriction::WIFI_DIRECT) {
+        legacy_restrictions |= legacy_hal::wifi_coex_restriction::WIFI_DIRECT;
+    }
+    if (restrictions & CoexRestriction::SOFTAP) {
+        legacy_restrictions |= legacy_hal::wifi_coex_restriction::SOFTAP;
+    }
+    if (restrictions & CoexRestriction::WIFI_AWARE) {
+        legacy_restrictions |= legacy_hal::wifi_coex_restriction::WIFI_AWARE;
+    }
+    auto legacy_status = legacy_hal_.lock()->setCoexUnsafeChannels(
+        legacy_unsafe_channels, legacy_restrictions);
+    return createWifiStatusFromLegacyError(legacy_status);
+}
+
 WifiStatus WifiChip::handleChipConfiguration(
     /* NONNULL */ std::unique_lock<std::recursive_mutex>* lock,
     ChipModeId mode_id) {
@@ -1867,8 +1898,8 @@ std::vector<std::string> WifiChip::allocateBridgedApInstanceNames() {
     } else {
         int num_ifaces_need_to_allocate = 2 - instances.size();
         for (int i = 0; i < num_ifaces_need_to_allocate; i++) {
-            std::string instance_name =
-                allocateApOrStaIfaceName(IfaceType::AP, startIdxOfApIface());
+            std::string instance_name = allocateApOrStaIfaceName(
+                IfaceType::AP, startIdxOfApIface() + i);
             if (!instance_name.empty()) {
                 instances.push_back(instance_name);
             }

@@ -117,6 +117,9 @@ interface IRadio extends @1.5::IRadio {
      * @param pduSessionId The pdu session id to be used for this data call.  A value of 0 means
      *     no pdu session id was attached to this call.
      *     Reference: 3GPP TS 24.007 section 11.2.3.1b
+     * @param sliceInfo SliceInfo to be used for the data connection when a handover occurs from
+     *     EPDG to 5G.  It is valid only when accessNetwork is AccessNetwork:NGRAN.  If the slice
+     *     passed from EPDG is rejected, then the data failure cause must be DataCallFailCause:SLICE_REJECTED.
      *
      * Response function is IRadioResponse.setupDataCallResponse_1_6()
      *
@@ -125,7 +128,7 @@ interface IRadio extends @1.5::IRadio {
     oneway setupDataCall_1_6(int32_t serial, AccessNetwork accessNetwork,
             DataProfileInfo dataProfileInfo, bool roamingAllowed,
             DataRequestReason reason, vec<LinkAddress> addresses, vec<string> dnses,
-            int32_t pduSessionId);
+            int32_t pduSessionId, OptionalSliceInfo sliceInfo);
 
     /**
      * Send an SMS message
@@ -327,10 +330,24 @@ interface IRadio extends @1.5::IRadio {
      * @param serial Serial number of request.
      * @param networkTypeBitmap a 32-bit bearer bitmap of RadioAccessFamily
      *
-     * Response callbask is IRadioResponse.setNetworkTypeBitmapResponse()
+     * Response callback is IRadioResponse.setNetworkTypeBitmapResponse()
      */
     oneway setAllowedNetworkTypeBitmap(
             uint32_t serial, bitfield<RadioAccessFamily> networkTypeBitmap);
+
+    /**
+     * Requests bitmap representing the currently allowed network types.
+     *
+     * Requests the bitmap set by the corresponding method
+     * setAllowedNetworkTypeBitmap, which sets a strict set of RATs for the
+     * radio to use. Differs from getPreferredNetworkType and getPreferredNetworkTypeBitmap
+     * in that those request *preferences*.
+     *
+     * @param serial Serial number of request.
+     *
+     * Response callback is IRadioResponse.getNetworkTypeBitmapResponse()
+     */
+    oneway getAllowedNetworkTypeBitmap(uint32_t serial);
 
     /**
      * Control data throttling at modem.
@@ -390,6 +407,15 @@ interface IRadio extends @1.5::IRadio {
     oneway getVoiceRegistrationState_1_6(int32_t serial);
 
     /**
+     * Requests current signal strength and associated information.  Must succeed if radio is on.
+     *
+     * @param serial Serial number of request.
+     *
+     * Response function is IRadioResponse.getSignalStrengthResponse_1_6()
+     */
+    oneway getSignalStrength_1_6(int32_t serial);
+
+    /**
      * Request current data registration state.
      *
      * @param serial Serial number of request.
@@ -397,4 +423,13 @@ interface IRadio extends @1.5::IRadio {
      * Response function is IRadioResponse.getDataRegistrationStateResponse_1_6()
      */
     oneway getDataRegistrationState_1_6(int32_t serial);
+
+    /**
+     * Requests current call list
+     *
+     * @param serial Serial number of request.
+     *
+     * Response function is IRadioResponse.getCurrentCallsResponse_1_6()
+     */
+    oneway getCurrentCalls_1_6(int32_t serial);
 };

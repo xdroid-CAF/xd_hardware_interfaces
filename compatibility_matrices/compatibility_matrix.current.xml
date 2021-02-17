@@ -319,7 +319,7 @@
         </interface>
     </hal>
     <hal format="aidl" optional="true">
-        <name>android.hardware.keymint</name>
+        <name>android.hardware.security.keymint</name>
         <interface>
             <name>IKeyMintDevice</name>
             <instance>default</instance>
@@ -351,6 +351,13 @@
         </interface>
         <interface>
             <name>IOmxStore</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+    <hal format="aidl" optional="true">
+        <name>android.hardware.memtrack</name>
+        <interface>
+            <name>IMemtrack</name>
             <instance>default</instance>
         </interface>
     </hal>
