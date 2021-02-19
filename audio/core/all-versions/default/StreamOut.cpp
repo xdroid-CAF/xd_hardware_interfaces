@@ -17,7 +17,6 @@
 #define LOG_TAG "StreamOutHAL"
 
 #include "core/default/StreamOut.h"
-#include "core/default/Conversions.h"
 #include "core/default/Util.h"
 
 //#define LOG_NDEBUG 0
@@ -30,6 +29,7 @@
 #include <HidlUtils.h>
 #include <android/log.h>
 #include <hardware/audio.h>
+#include <util/CoreUtils.h>
 #include <utils/Trace.h>
 
 namespace android {
@@ -239,7 +239,7 @@ Return<void> StreamOut::getSupportedProfiles(getSupportedProfiles_cb _hidl_cb) {
     return mStreamCommon->getSupportedProfiles(_hidl_cb);
 }
 
-Return<Result> StreamOut::setAudioProperties(const AudioConfigBase& config) {
+Return<Result> StreamOut::setAudioProperties(const AudioConfigBaseOptional& config) {
     return mStreamCommon->setAudioProperties(config);
 }
 
@@ -589,13 +589,15 @@ Return<void> StreamOut::debug(const hidl_handle& fd, const hidl_vec<hidl_string>
 Result StreamOut::doUpdateSourceMetadata(const SourceMetadata& sourceMetadata) {
     std::vector<playback_track_metadata_t> halTracks;
 #if MAJOR_VERSION <= 6
-    (void)sourceMetadataToHal(sourceMetadata, &halTracks);
+    (void)CoreUtils::sourceMetadataToHal(sourceMetadata, &halTracks);
 #else
     // Validate whether a conversion to V7 is possible. This is needed
     // to have a consistent behavior of the HAL regardless of the API
     // version of the legacy HAL (and also to be consistent with openOutputStream).
     std::vector<playback_track_metadata_v7> halTracksV7;
-    if (status_t status = sourceMetadataToHalV7(sourceMetadata, &halTracksV7); status == NO_ERROR) {
+    if (status_t status = CoreUtils::sourceMetadataToHalV7(
+                sourceMetadata, false /*ignoreNonVendorTags*/, &halTracksV7);
+        status == NO_ERROR) {
         halTracks.reserve(halTracksV7.size());
         for (auto metadata_v7 : halTracksV7) {
             halTracks.push_back(std::move(metadata_v7.base));
@@ -615,7 +617,9 @@ Result StreamOut::doUpdateSourceMetadata(const SourceMetadata& sourceMetadata) {
 #if MAJOR_VERSION >= 7
 Result StreamOut::doUpdateSourceMetadataV7(const SourceMetadata& sourceMetadata) {
     std::vector<playback_track_metadata_v7> halTracks;
-    if (status_t status = sourceMetadataToHalV7(sourceMetadata, &halTracks); status != NO_ERROR) {
+    if (status_t status = CoreUtils::sourceMetadataToHalV7(
+                sourceMetadata, false /*ignoreNonVendorTags*/, &halTracks);
+        status != NO_ERROR) {
         return Stream::analyzeStatus("sourceMetadataToHal", status);
     }
     const source_metadata_v7_t halMetadata = {
@@ -658,32 +662,65 @@ Return<Result> StreamOut::selectPresentation(int32_t /*presentationId*/, int32_t
 
 #if MAJOR_VERSION >= 6
 Return<void> StreamOut::getDualMonoMode(getDualMonoMode_cb _hidl_cb) {
-    _hidl_cb(Result::NOT_SUPPORTED, DualMonoMode::OFF);
+    audio_dual_mono_mode_t mode = AUDIO_DUAL_MONO_MODE_OFF;
+    Result retval = mStream->get_dual_mono_mode != nullptr
+                            ? Stream::analyzeStatus("get_dual_mono_mode",
+                                                    mStream->get_dual_mono_mode(mStream, &mode))
+                            : Result::NOT_SUPPORTED;
+    _hidl_cb(retval, DualMonoMode(mode));
     return Void();
 }
 
-Return<Result> StreamOut::setDualMonoMode(DualMonoMode /*mode*/) {
-    return Result::NOT_SUPPORTED;
+Return<Result> StreamOut::setDualMonoMode(DualMonoMode mode) {
+    return mStream->set_dual_mono_mode != nullptr
+                   ? Stream::analyzeStatus(
+                             "set_dual_mono_mode",
+                             mStream->set_dual_mono_mode(mStream,
+                                                         static_cast<audio_dual_mono_mode_t>(mode)))
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<void> StreamOut::getAudioDescriptionMixLevel(getAudioDescriptionMixLevel_cb _hidl_cb) {
-    _hidl_cb(Result::NOT_SUPPORTED, -std::numeric_limits<float>::infinity());
+    float leveldB = -std::numeric_limits<float>::infinity();
+    Result retval = mStream->get_audio_description_mix_level != nullptr
+                            ? Stream::analyzeStatus(
+                                      "get_audio_description_mix_level",
+                                      mStream->get_audio_description_mix_level(mStream, &leveldB))
+                            : Result::NOT_SUPPORTED;
+    _hidl_cb(retval, leveldB);
     return Void();
 }
 
-Return<Result> StreamOut::setAudioDescriptionMixLevel(float /*leveldB*/) {
-    return Result::NOT_SUPPORTED;
+Return<Result> StreamOut::setAudioDescriptionMixLevel(float leveldB) {
+    return mStream->set_audio_description_mix_level != nullptr
+                   ? Stream::analyzeStatus(
+                             "set_audio_description_mix_level",
+                             mStream->set_audio_description_mix_level(mStream, leveldB))
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<void> StreamOut::getPlaybackRateParameters(getPlaybackRateParameters_cb _hidl_cb) {
-    _hidl_cb(Result::NOT_SUPPORTED,
-             // Same as AUDIO_PLAYBACK_RATE_INITIALIZER
-             PlaybackRate{1.0f, 1.0f, TimestretchMode::DEFAULT, TimestretchFallbackMode::FAIL});
+    audio_playback_rate_t rate = AUDIO_PLAYBACK_RATE_INITIALIZER;
+    Result retval =
+            mStream->get_playback_rate_parameters != nullptr
+                    ? Stream::analyzeStatus("get_playback_rate_parameters",
+                                            mStream->get_playback_rate_parameters(mStream, &rate))
+                    : Result::NOT_SUPPORTED;
+    _hidl_cb(retval,
+             PlaybackRate{rate.mSpeed, rate.mPitch, static_cast<TimestretchMode>(rate.mStretchMode),
+                          static_cast<TimestretchFallbackMode>(rate.mFallbackMode)});
     return Void();
 }
 
-Return<Result> StreamOut::setPlaybackRateParameters(const PlaybackRate& /*playbackRate*/) {
-    return Result::NOT_SUPPORTED;
+Return<Result> StreamOut::setPlaybackRateParameters(const PlaybackRate& playbackRate) {
+    audio_playback_rate_t rate = {
+            playbackRate.speed, playbackRate.pitch,
+            static_cast<audio_timestretch_stretch_mode_t>(playbackRate.timestretchMode),
+            static_cast<audio_timestretch_fallback_mode_t>(playbackRate.fallbackMode)};
+    return mStream->set_playback_rate_parameters != nullptr
+                   ? Stream::analyzeStatus("set_playback_rate_parameters",
+                                           mStream->set_playback_rate_parameters(mStream, &rate))
+                   : Result::NOT_SUPPORTED;
 }
 
 Return<Result> StreamOut::setEventCallback(const sp<IStreamOutEventCallback>& callback) {
