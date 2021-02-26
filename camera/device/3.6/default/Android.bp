@@ -65,4 +65,5 @@ cc_library_shared {
     export_shared_lib_headers: [
         "libfmq",
     ],
+    sdclang: false, // See b/163842697
 }
