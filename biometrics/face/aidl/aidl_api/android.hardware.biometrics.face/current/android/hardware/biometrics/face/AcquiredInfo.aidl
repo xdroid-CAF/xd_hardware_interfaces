@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -58,7 +59,5 @@ enum AcquiredInfo {
   VENDOR = 22,
   FIRST_FRAME_RECEIVED = 23,
   DARK_GLASSES_DETECTED = 24,
-  FACE_COVERING_DETECTED = 25,
-  EYES_NOT_VISIBLE = 26,
-  MOUTH_NOT_VISIBLE = 27,
+  MOUTH_COVERING_DETECTED = 25,
 }

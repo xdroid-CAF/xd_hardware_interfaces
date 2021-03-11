@@ -18,6 +18,9 @@ LOCAL_PATH := $(call my-dir)
 ###
 include $(CLEAR_VARS)
 LOCAL_MODULE := android.hardware.wifi@1.0-service-lib
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../../../NOTICE
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CPPFLAGS := -Wall -Werror -Wextra
@@ -87,6 +90,9 @@ include $(BUILD_STATIC_LIBRARY)
 ###
 include $(CLEAR_VARS)
 LOCAL_MODULE := android.hardware.wifi@1.0-service
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../../../NOTICE
 LOCAL_VINTF_FRAGMENTS := android.hardware.wifi@1.0-service.xml
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_PROPRIETARY_MODULE := true
@@ -124,6 +130,9 @@ include $(BUILD_EXECUTABLE)
 ###
 include $(CLEAR_VARS)
 LOCAL_MODULE := android.hardware.wifi@1.0-service-lazy
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../../../NOTICE
 LOCAL_VINTF_FRAGMENTS := android.hardware.wifi@1.0-service.xml
 LOCAL_OVERRIDES_MODULES := android.hardware.wifi@1.0-service
 LOCAL_CFLAGS := -DLAZY_SERVICE
@@ -158,6 +167,9 @@ include $(BUILD_EXECUTABLE)
 ###
 include $(CLEAR_VARS)
 LOCAL_MODULE := android.hardware.wifi@1.0-service-tests
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../../../NOTICE
 LOCAL_PROPRIETARY_MODULE := true
 LOCAL_CPPFLAGS := -Wall -Werror -Wextra
 LOCAL_SRC_FILES := \
