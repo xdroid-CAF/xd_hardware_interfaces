@@ -33,7 +33,7 @@ parcelable CommonProps {
      * A statically configured strength for this sensor. See the SensorStrength interface for more
      * information.
      */
-    SensorStrength sensorStrength;
+    SensorStrength sensorStrength = SensorStrength.CONVENIENCE;
 
     /**
      * The maximum number of enrollments that a single user can have. Statically configured.
@@ -44,4 +44,13 @@ parcelable CommonProps {
      * A list of hardware information for subsystems that pertain to this biometric sensor.
      */
     HardwareInfo[] hardwareInfo;
+
+    /**
+     * Software information for subsystems that pertain to this biometric sensor.
+     * This may include information for the matching algorithm, the PAD (Presentation Attack
+     * Detection) algorithm, and any other algorithm(s) used by this biometric sensor.
+     * For example, <algorithm_1_info>;<algorithm_2_info>;<algorithm_3_info>.
+     * The format of each algorithm's info can be <vendor>/<algorithm>/<version>.
+     */
+    String softwareInfo;
 }

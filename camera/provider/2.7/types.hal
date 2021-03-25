@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
+ * Copyright (C) 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,17 @@
  * limitations under the License.
  */
 
-package android.hardware.security.keymint;
+package android.hardware.camera.provider@2.7;
 
-import android.hardware.security.keymint.KeyParameter;
+import android.hardware.camera.device@3.7::StreamConfiguration;
 
 /**
- * Identifies the key authorization parameters to be used with keyMint.  This is usually
- * provided as an array of KeyParameters to IKeyMintDevice or Operation.
+ * CameraIdAndStreamCombination:
+ *
+ * This is identical to @2.6::CameraIdAndStreamCombination except that
+ * streamConfiguration is of version @3.7.
  */
-@VintfStability
-parcelable KeyParameterArray {
-    /**
-     * Identify list of key parameters corresponding to a particular key blob.
-     */
-    KeyParameter[] params;
-}
+struct CameraIdAndStreamCombination {
+    string cameraId;
+    @3.7::StreamConfiguration streamConfiguration;
+};
