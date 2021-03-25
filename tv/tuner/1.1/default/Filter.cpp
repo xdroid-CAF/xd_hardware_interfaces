@@ -16,8 +16,10 @@
 
 #define LOG_TAG "android.hardware.tv.tuner@1.1-Filter"
 
-#include "Filter.h"
+#include <BufferAllocator/BufferAllocator.h>
 #include <utils/Log.h>
+
+#include "Filter.h"
 
 namespace android {
 namespace hardware {
@@ -72,12 +74,14 @@ Filter::Filter(DemuxFilterType type, uint64_t filterId, uint32_t bufferSize,
     sp<V1_1::IFilterCallback> filterCallback_v1_1 = V1_1::IFilterCallback::castFrom(cb);
     if (filterCallback_v1_1 != NULL) {
         mCallback_1_1 = filterCallback_v1_1;
-    } else {
-        mCallback = cb;
     }
+    mCallback = cb;
 }
 
-Filter::~Filter() {}
+Filter::~Filter() {
+    mFilterThreadRunning = false;
+    std::lock_guard<std::mutex> lock(mFilterThreadLock);
+}
 
 Return<void> Filter::getId64Bit(getId64Bit_cb _hidl_cb) {
     ALOGV("%s", __FUNCTION__);
@@ -137,15 +141,54 @@ Return<Result> Filter::configure(const DemuxFilterSettings& settings) {
 
 Return<Result> Filter::start() {
     ALOGV("%s", __FUNCTION__);
-
+    mFilterThreadRunning = true;
+    // All the filter event callbacks in start are for testing purpose.
+    switch (mType.mainType) {
+        case DemuxFilterMainType::TS:
+            mCallback->onFilterEvent(createMediaEvent());
+            mCallback->onFilterEvent(createTsRecordEvent());
+            mCallback->onFilterEvent(createTemiEvent());
+            // clients could still pass 1.0 callback
+            if (mCallback_1_1 != NULL) {
+                mCallback_1_1->onFilterEvent_1_1(createTsRecordEvent(), createTsRecordEventExt());
+            }
+            break;
+        case DemuxFilterMainType::MMTP:
+            mCallback->onFilterEvent(createDownloadEvent());
+            mCallback->onFilterEvent(createMmtpRecordEvent());
+            if (mCallback_1_1 != NULL) {
+                mCallback_1_1->onFilterEvent_1_1(createMmtpRecordEvent(),
+                                                 createMmtpRecordEventExt());
+            }
+            break;
+        case DemuxFilterMainType::IP:
+            mCallback->onFilterEvent(createSectionEvent());
+            mCallback->onFilterEvent(createIpPayloadEvent());
+            break;
+        case DemuxFilterMainType::TLV: {
+            if (mCallback_1_1 != NULL) {
+                DemuxFilterEvent emptyFilterEvent;
+                mCallback_1_1->onFilterEvent_1_1(emptyFilterEvent, createMonitorEvent());
+            }
+            break;
+        }
+        case DemuxFilterMainType::ALP: {
+            if (mCallback_1_1 != NULL) {
+                DemuxFilterEvent emptyFilterEvent;
+                mCallback_1_1->onFilterEvent_1_1(emptyFilterEvent, createRestartEvent());
+            }
+            break;
+        }
+        default:
+            break;
+    }
     return startFilterLoop();
 }
 
 Return<Result> Filter::stop() {
     ALOGV("%s", __FUNCTION__);
-
     mFilterThreadRunning = false;
-
+    std::lock_guard<std::mutex> lock(mFilterThreadLock);
     return Result::SUCCESS;
 }
 
@@ -185,6 +228,8 @@ Return<Result> Filter::releaseAvHandle(const hidl_handle& avMemory, uint64_t avD
 Return<Result> Filter::close() {
     ALOGV("%s", __FUNCTION__);
 
+    mFilterThreadRunning = false;
+    std::lock_guard<std::mutex> lock(mFilterThreadLock);
     return mDemux->removeFilter(mFilterId);
 }
 
@@ -216,11 +261,14 @@ Return<void> Filter::getAvSharedHandle(getAvSharedHandle_cb _hidl_cb) {
     int av_fd = createAvIonFd(BUFFER_SIZE_16M);
     if (av_fd == -1) {
         _hidl_cb(Result::UNKNOWN_ERROR, NULL, 0);
+        return Void();
     }
 
     native_handle_t* nativeHandle = createNativeHandle(av_fd);
     if (nativeHandle == NULL) {
+        ::close(av_fd);
         _hidl_cb(Result::UNKNOWN_ERROR, NULL, 0);
+        return Void();
     }
     mSharedAvMemHandle.setTo(nativeHandle, /*shouldOwn=*/true);
     ::close(av_fd);
@@ -331,9 +379,11 @@ void* Filter::__threadLoopFilter(void* user) {
 }
 
 void Filter::filterThreadLoop() {
-    ALOGD("[Filter] filter %" PRIu64 " threadLoop start.", mFilterId);
+    if (!mFilterThreadRunning) {
+        return;
+    }
     std::lock_guard<std::mutex> lock(mFilterThreadLock);
-    mFilterThreadRunning = true;
+    ALOGD("[Filter] filter %" PRIu64 " threadLoop start.", mFilterId);
 
     // For the first time of filter output, implementation needs to send the filter
     // Event Callback without waiting for the DATA_CONSUMED to init the process.
@@ -382,6 +432,9 @@ void Filter::filterThreadLoop() {
         // We do not wait for the last round of written data to be read to finish the thread
         // because the VTS can verify the reading itself.
         for (int i = 0; i < SECTION_WRITE_COUNT; i++) {
+            if (!mFilterThreadRunning) {
+                break;
+            }
             while (mFilterThreadRunning && mIsUsingFMQ) {
                 status_t status = mFilterEventFlag->wait(
                         static_cast<uint32_t>(DemuxQueueNotifyBits::DATA_CONSUMED), &efState,
@@ -417,9 +470,8 @@ void Filter::filterThreadLoop() {
                 break;
             }
         }
-        mFilterThreadRunning = false;
+        break;
     }
-
     ALOGD("[Filter] filter thread ended.");
 }
 
@@ -779,15 +831,15 @@ void Filter::detachFilterFromRecord() {
 }
 
 int Filter::createAvIonFd(int size) {
-    // Create an ion fd and allocate an av fd mapped to a buffer to it.
-    int ion_fd = ion_open();
-    if (ion_fd == -1) {
-        ALOGE("[Filter] Failed to open ion fd %d", errno);
+    // Create an DMA-BUF fd and allocate an av fd mapped to a buffer to it.
+    auto buffer_allocator = std::make_unique<BufferAllocator>();
+    if (!buffer_allocator) {
+        ALOGE("[Filter] Unable to create BufferAllocator object");
         return -1;
     }
     int av_fd = -1;
-    ion_alloc_fd(dup(ion_fd), size, 0 /*align*/, ION_HEAP_SYSTEM_MASK, 0 /*flags*/, &av_fd);
-    if (av_fd == -1) {
+    av_fd = buffer_allocator->Alloc("system-uncached", size);
+    if (av_fd < 0) {
         ALOGE("[Filter] Failed to create av fd %d", errno);
         return -1;
     }
@@ -917,6 +969,182 @@ bool Filter::sameFile(int fd1, int fd2) {
         return false;
     }
     return (stat1.st_dev == stat2.st_dev) && (stat1.st_ino == stat2.st_ino);
+}
+
+DemuxFilterEvent Filter::createMediaEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].media({
+            .streamId = 1,
+            .isPtsPresent = true,
+            .pts = 2,
+            .dataLength = 3,
+            .offset = 4,
+            .isSecureMemory = true,
+            .mpuSequenceNumber = 6,
+            .isPesPrivateData = true,
+    });
+
+    event.events[0].media().extraMetaData.audio({
+            .adFade = 1,
+            .adPan = 2,
+            .versionTextTag = 3,
+            .adGainCenter = 4,
+            .adGainFront = 5,
+            .adGainSurround = 6,
+    });
+
+    int av_fd = createAvIonFd(BUFFER_SIZE_16M);
+    if (av_fd == -1) {
+        return event;
+    }
+
+    native_handle_t* nativeHandle = createNativeHandle(av_fd);
+    if (nativeHandle == NULL) {
+        ::close(av_fd);
+        ALOGE("[Filter] Failed to create native_handle %d", errno);
+        return event;
+    }
+
+    // Create a dataId and add a <dataId, av_fd> pair into the dataId2Avfd map
+    uint64_t dataId = mLastUsedDataId++ /*createdUID*/;
+    mDataId2Avfd[dataId] = dup(av_fd);
+    event.events[0].media().avDataId = dataId;
+
+    hidl_handle handle;
+    handle.setTo(nativeHandle, /*shouldOwn=*/true);
+    event.events[0].media().avMemory = std::move(handle);
+    ::close(av_fd);
+
+    return event;
+}
+
+DemuxFilterEvent Filter::createTsRecordEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    DemuxPid pid;
+    pid.tPid(1);
+    DemuxFilterTsRecordEvent::ScIndexMask mask;
+    mask.sc(1);
+    event.events[0].tsRecord({
+            .pid = pid,
+            .tsIndexMask = 1,
+            .scIndexMask = mask,
+            .byteNumber = 2,
+    });
+    return event;
+}
+
+V1_1::DemuxFilterEventExt Filter::createTsRecordEventExt() {
+    V1_1::DemuxFilterEventExt event;
+    event.events.resize(1);
+
+    event.events[0].tsRecord({
+            .pts = 1,
+            .firstMbInSlice = 2,  // random address
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createMmtpRecordEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].mmtpRecord({
+            .scHevcIndexMask = 1,
+            .byteNumber = 2,
+    });
+    return event;
+}
+
+V1_1::DemuxFilterEventExt Filter::createMmtpRecordEventExt() {
+    V1_1::DemuxFilterEventExt event;
+    event.events.resize(1);
+
+    event.events[0].mmtpRecord({
+            .pts = 1,
+            .mpuSequenceNumber = 2,
+            .firstMbInSlice = 3,
+            .tsIndexMask = 4,
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createSectionEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].section({
+            .tableId = 1,
+            .version = 2,
+            .sectionNum = 3,
+            .dataLength = 0,
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createPesEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].pes({
+            .streamId = static_cast<DemuxStreamId>(1),
+            .dataLength = 1,
+            .mpuSequenceNumber = 2,
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createDownloadEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].download({
+            .itemId = 1,
+            .mpuSequenceNumber = 2,
+            .itemFragmentIndex = 3,
+            .lastItemFragmentIndex = 4,
+            .dataLength = 0,
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createIpPayloadEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].ipPayload({
+            .dataLength = 0,
+    });
+    return event;
+}
+
+DemuxFilterEvent Filter::createTemiEvent() {
+    DemuxFilterEvent event;
+    event.events.resize(1);
+
+    event.events[0].temi({.pts = 1, .descrTag = 2, .descrData = {3}});
+    return event;
+}
+
+V1_1::DemuxFilterEventExt Filter::createMonitorEvent() {
+    V1_1::DemuxFilterEventExt event;
+    event.events.resize(1);
+
+    V1_1::DemuxFilterMonitorEvent monitor;
+    monitor.scramblingStatus(V1_1::ScramblingStatus::SCRAMBLED);
+    event.events[0].monitorEvent(monitor);
+    return event;
+}
+
+V1_1::DemuxFilterEventExt Filter::createRestartEvent() {
+    V1_1::DemuxFilterEventExt event;
+    event.events.resize(1);
+
+    event.events[0].startId(1);
+    return event;
 }
 }  // namespace implementation
 }  // namespace V1_0

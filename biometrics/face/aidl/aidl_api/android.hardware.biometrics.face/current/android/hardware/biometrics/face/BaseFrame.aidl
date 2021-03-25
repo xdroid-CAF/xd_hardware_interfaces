@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -33,7 +34,7 @@
 package android.hardware.biometrics.face;
 @VintfStability
 parcelable BaseFrame {
-  android.hardware.biometrics.face.AcquiredInfo acquiredInfo;
+  android.hardware.biometrics.face.AcquiredInfo acquiredInfo = android.hardware.biometrics.face.AcquiredInfo.INSUFFICIENT;
   int vendorCode;
   float pan;
   float tilt;

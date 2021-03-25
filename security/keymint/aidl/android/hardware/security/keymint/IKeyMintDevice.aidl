@@ -18,7 +18,6 @@ package android.hardware.security.keymint;
 
 import android.hardware.security.keymint.AttestationKey;
 import android.hardware.security.keymint.BeginResult;
-import android.hardware.security.keymint.ByteArray;
 import android.hardware.security.keymint.HardwareAuthToken;
 import android.hardware.security.keymint.IKeyMintOperation;
 import android.hardware.security.keymint.KeyCreationResult;
@@ -761,4 +760,18 @@ interface IKeyMintDevice {
      * an EARLY_BOOT_ONLY key after this method is called must fail with Error::INVALID_KEY_BLOB.
      */
     void earlyBootEnded();
+
+    /**
+     * Called by the client to perform a KeyMint operation.
+     *
+     *  This method is added primarily as a placeholder.  Details will be fleshed before the KeyMint
+     *  V1 interface is frozen.  Until then, implementations must return ErrorCode::UNIMPLEMENTED.
+     *
+     * @param request is an encrypted buffer containing a description of the operation the client
+     *        wishes to perform.  Structure, content and encryption are TBD.
+     *
+     * @return an encrypted buffer containing the result of the operation.  Structure, content and
+     *         encryption are TBD.
+     */
+    byte[] performOperation(in byte[] request);
 }

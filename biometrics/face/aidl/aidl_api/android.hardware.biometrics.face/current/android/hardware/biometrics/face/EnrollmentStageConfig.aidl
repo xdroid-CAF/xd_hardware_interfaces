@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -33,6 +34,6 @@
 package android.hardware.biometrics.face;
 @VintfStability
 parcelable EnrollmentStageConfig {
-  android.hardware.biometrics.face.EnrollmentStage stage;
+  android.hardware.biometrics.face.EnrollmentStage stage = android.hardware.biometrics.face.EnrollmentStage.FIRST_FRAME_RECEIVED;
   List<android.hardware.biometrics.face.Cell> cells;
 }
