@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
+ * Copyright (C) 2021 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,21 @@
  * limitations under the License.
  */
 
-package android.hardware.biometrics.common;
+package android.hardware.vibrator;
 
 @VintfStability
-parcelable HardwareInfo {
+@Backing(type="int")
+enum Braking {
     /**
-     * An identifier uniquely identifying a subsystem.
+     * No braking mechanism used.
+     * This is the default if the hardware does not support any braking mechanism.
      */
-    String deviceName;
-
+    NONE,
     /**
-     * The hardware version. For example, <vendor>/<model>/<revision>.
+     * Closed-loop active braking.
+     *
+     * This effect should produce a sharp, crisp end to the waveform
+     * Support is optional.
      */
-    String hardwareVersion;
-
-    /**
-     * The sensor's serial number.
-     */
-    String serialNumber;
+    CLAB,
 }
