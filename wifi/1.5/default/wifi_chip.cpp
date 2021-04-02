@@ -974,7 +974,7 @@ sp<WifiApIface> WifiChip::newWifiApIface(std::string& ifname) {
             ap_instances = it.second;
         }
     }
-    iface_util_.lock()->setRandomMacAddressIndex(ap_ifaces_.size());
+    iface_util_->setRandomMacAddressIndex(ap_ifaces_.size());
     sp<WifiApIface> iface =
         new WifiApIface(ifname, ap_instances, legacy_hal_, iface_util_);
     ap_ifaces_.push_back(iface);
