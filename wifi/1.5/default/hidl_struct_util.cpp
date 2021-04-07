@@ -952,27 +952,29 @@ bool convertLegacyVectorOfDebugRxPacketFateToHidl(
 
 bool convertLegacyLinkLayerRadioStatsToHidl(
     const legacy_hal::LinkLayerRadioStats& legacy_radio_stat,
-    V1_3::StaLinkLayerRadioStats* hidl_radio_stat) {
+    V1_5::StaLinkLayerRadioStats* hidl_radio_stat) {
     if (!hidl_radio_stat) {
         return false;
     }
     *hidl_radio_stat = {};
 
-    hidl_radio_stat->V1_0.onTimeInMs = legacy_radio_stat.stats.on_time;
-    hidl_radio_stat->V1_0.txTimeInMs = legacy_radio_stat.stats.tx_time;
-    hidl_radio_stat->V1_0.rxTimeInMs = legacy_radio_stat.stats.rx_time;
-    hidl_radio_stat->V1_0.onTimeInMsForScan =
+    hidl_radio_stat->radioId = legacy_radio_stat.stats.radio;
+    hidl_radio_stat->V1_3.V1_0.onTimeInMs = legacy_radio_stat.stats.on_time;
+    hidl_radio_stat->V1_3.V1_0.txTimeInMs = legacy_radio_stat.stats.tx_time;
+    hidl_radio_stat->V1_3.V1_0.rxTimeInMs = legacy_radio_stat.stats.rx_time;
+    hidl_radio_stat->V1_3.V1_0.onTimeInMsForScan =
         legacy_radio_stat.stats.on_time_scan;
-    hidl_radio_stat->V1_0.txTimeInMsPerLevel =
+    hidl_radio_stat->V1_3.V1_0.txTimeInMsPerLevel =
         legacy_radio_stat.tx_time_per_levels;
-    hidl_radio_stat->onTimeInMsForNanScan = legacy_radio_stat.stats.on_time_nbd;
-    hidl_radio_stat->onTimeInMsForBgScan =
+    hidl_radio_stat->V1_3.onTimeInMsForNanScan =
+        legacy_radio_stat.stats.on_time_nbd;
+    hidl_radio_stat->V1_3.onTimeInMsForBgScan =
         legacy_radio_stat.stats.on_time_gscan;
-    hidl_radio_stat->onTimeInMsForRoamScan =
+    hidl_radio_stat->V1_3.onTimeInMsForRoamScan =
         legacy_radio_stat.stats.on_time_roam_scan;
-    hidl_radio_stat->onTimeInMsForPnoScan =
+    hidl_radio_stat->V1_3.onTimeInMsForPnoScan =
         legacy_radio_stat.stats.on_time_pno_scan;
-    hidl_radio_stat->onTimeInMsForHs20Scan =
+    hidl_radio_stat->V1_3.onTimeInMsForHs20Scan =
         legacy_radio_stat.stats.on_time_hs20;
 
     std::vector<V1_3::WifiChannelStats> hidl_channel_stats;
@@ -994,7 +996,7 @@ bool convertLegacyLinkLayerRadioStatsToHidl(
         hidl_channel_stats.push_back(hidl_channel_stat);
     }
 
-    hidl_radio_stat->channelStats = hidl_channel_stats;
+    hidl_radio_stat->V1_3.channelStats = hidl_channel_stats;
 
     return true;
 }
@@ -1075,10 +1077,21 @@ bool convertLegacyLinkLayerStatsToHidl(
         legacy_stats.iface.ac[legacy_hal::WIFI_AC_VO].contention_num_samples;
     hidl_stats->iface.timeSliceDutyCycleInPercent =
         legacy_stats.iface.info.time_slicing_duty_cycle_percent;
+    // peer info legacy_stats conversion.
+    std::vector<StaPeerInfo> hidl_peers_info_stats;
+    for (const auto& legacy_peer_info_stats : legacy_stats.peers) {
+        StaPeerInfo hidl_peer_info_stats;
+        if (!convertLegacyPeerInfoStatsToHidl(legacy_peer_info_stats,
+                                              &hidl_peer_info_stats)) {
+            return false;
+        }
+        hidl_peers_info_stats.push_back(hidl_peer_info_stats);
+    }
+    hidl_stats->iface.peers = hidl_peers_info_stats;
     // radio legacy_stats conversion.
-    std::vector<V1_3::StaLinkLayerRadioStats> hidl_radios_stats;
+    std::vector<V1_5::StaLinkLayerRadioStats> hidl_radios_stats;
     for (const auto& legacy_radio_stats : legacy_stats.radios) {
-        V1_3::StaLinkLayerRadioStats hidl_radio_stats;
+        V1_5::StaLinkLayerRadioStats hidl_radio_stats;
         if (!convertLegacyLinkLayerRadioStatsToHidl(legacy_radio_stats,
                                                     &hidl_radio_stats)) {
             return false;
@@ -1089,6 +1102,35 @@ bool convertLegacyLinkLayerStatsToHidl(
     // Timestamp in the HAL wrapper here since it's not provided in the legacy
     // HAL API.
     hidl_stats->timeStampInMs = uptimeMillis();
+    return true;
+}
+
+bool convertLegacyPeerInfoStatsToHidl(
+    const legacy_hal::WifiPeerInfo& legacy_peer_info_stats,
+    StaPeerInfo* hidl_peer_info_stats) {
+    if (!hidl_peer_info_stats) {
+        return false;
+    }
+    *hidl_peer_info_stats = {};
+    hidl_peer_info_stats->staCount =
+        legacy_peer_info_stats.peer_info.bssload.sta_count;
+    hidl_peer_info_stats->chanUtil =
+        legacy_peer_info_stats.peer_info.bssload.chan_util;
+
+    std::vector<StaRateStat> hidlRateStats;
+    for (const auto& legacy_rate_stats : legacy_peer_info_stats.rate_stats) {
+        StaRateStat rateStat;
+        if (!convertLegacyWifiRateInfoToHidl(legacy_rate_stats.rate,
+                                             &rateStat.rateInfo)) {
+            return false;
+        }
+        rateStat.txMpdu = legacy_rate_stats.tx_mpdu;
+        rateStat.rxMpdu = legacy_rate_stats.rx_mpdu;
+        rateStat.mpduLost = legacy_rate_stats.mpdu_lost;
+        rateStat.retries = legacy_rate_stats.retries;
+        hidlRateStats.push_back(rateStat);
+    }
+    hidl_peer_info_stats->rateStats = hidlRateStats;
     return true;
 }
 
@@ -2515,10 +2557,9 @@ WifiChannelWidthInMhz convertLegacyWifiChannelWidthToHidl(
             return WifiChannelWidthInMhz::WIDTH_5;
         case legacy_hal::WIFI_CHAN_WIDTH_10:
             return WifiChannelWidthInMhz::WIDTH_10;
-        case legacy_hal::WIFI_CHAN_WIDTH_INVALID:
+        default:
             return WifiChannelWidthInMhz::WIDTH_INVALID;
     };
-    CHECK(false) << "Unknown legacy type: " << type;
 }
 
 legacy_hal::wifi_rtt_preamble convertHidlRttPreambleToLegacy(
