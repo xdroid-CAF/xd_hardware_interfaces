@@ -46,6 +46,14 @@ using namespace keymaster;
 
 namespace {
 
+// Hard-coded set of acceptable public keys that can act as roots of EEK chains.
+inline const vector<bytevec> kAuthorizedEekRoots = {
+        // TODO(drysdale): replace this random value with real root pubkey(s).
+        {0x5c, 0xea, 0x4b, 0xd2, 0x31, 0x27, 0x15, 0x5e, 0x62, 0x94, 0x70,
+         0x53, 0x94, 0x43, 0x0f, 0x9a, 0x89, 0xd5, 0xc5, 0x0f, 0x82, 0x9b,
+         0xcd, 0x10, 0xe0, 0x79, 0xef, 0xf3, 0xfa, 0x40, 0xeb, 0x0a},
+};
+
 constexpr auto STATUS_FAILED = RemotelyProvisionedComponent::STATUS_FAILED;
 constexpr auto STATUS_INVALID_EEK = RemotelyProvisionedComponent::STATUS_INVALID_EEK;
 constexpr auto STATUS_INVALID_MAC = RemotelyProvisionedComponent::STATUS_INVALID_MAC;
@@ -135,6 +143,13 @@ StatusOr<std::pair<bytevec /* EEK pub */, bytevec /* EEK ID */>> validateAndExtr
                           "Failed to validate EEK chain: " + cosePubKey.moveMessage());
         }
         lastPubKey = *std::move(cosePubKey);
+
+        // In prod mode the first pubkey should match a well-known Google public key.
+        if (!testMode && i == 0 &&
+            std::find(kAuthorizedEekRoots.begin(), kAuthorizedEekRoots.end(), lastPubKey) ==
+                    kAuthorizedEekRoots.end()) {
+            return Status(STATUS_INVALID_EEK, "Unrecognized root of EEK chain");
+        }
     }
 
     auto eek = CoseKey::parseX25519(lastPubKey, true /* requireKid */);
@@ -343,12 +358,13 @@ ScopedAStatus RemotelyProvisionedComponent::generateCertificateRequest(
         bcc = bcc_.clone();
     }
 
-    deviceInfo->deviceInfo = createDeviceInfo();
+    std::unique_ptr<cppbor::Map> deviceInfoMap = createDeviceInfo();
+    deviceInfo->deviceInfo = deviceInfoMap->encode();
     auto signedMac = constructCoseSign1(devicePrivKey /* Signing key */,  //
                                         ephemeralMacKey /* Payload */,
                                         cppbor::Array() /* AAD */
                                                 .add(challenge)
-                                                .add(deviceInfo->deviceInfo)
+                                                .add(std::move(deviceInfoMap))
                                                 .encode());
     if (!signedMac) return Status(signedMac.moveMessage());
 
@@ -394,8 +410,24 @@ bytevec RemotelyProvisionedComponent::deriveBytesFromHbk(const string& context,
     return result;
 }
 
-bytevec RemotelyProvisionedComponent::createDeviceInfo() const {
-    return cppbor::Map().encode();
+std::unique_ptr<cppbor::Map> RemotelyProvisionedComponent::createDeviceInfo() const {
+    auto result = std::make_unique<cppbor::Map>(cppbor::Map());
+
+    // The following placeholders show how the DeviceInfo map would be populated.
+    // result->add(cppbor::Tstr("brand"), cppbor::Tstr("Google"));
+    // result->add(cppbor::Tstr("manufacturer"), cppbor::Tstr("Google"));
+    // result->add(cppbor::Tstr("product"), cppbor::Tstr("Fake"));
+    // result->add(cppbor::Tstr("model"), cppbor::Tstr("Imaginary"));
+    // result->add(cppbor::Tstr("board"), cppbor::Tstr("Chess"));
+    // result->add(cppbor::Tstr("vb_state"), cppbor::Tstr("orange"));
+    // result->add(cppbor::Tstr("bootloader_state"), cppbor::Tstr("unlocked"));
+    // result->add(cppbor::Tstr("os_version"), cppbor::Tstr("SC"));
+    // result->add(cppbor::Tstr("system_patch_level"), cppbor::Uint(20210331));
+    // result->add(cppbor::Tstr("boot_patch_level"), cppbor::Uint(20210331));
+    // result->add(cppbor::Tstr("vendor_patch_level"), cppbor::Uint(20210331));
+
+    result->canonicalize();
+    return result;
 }
 
 std::pair<bytevec /* privKey */, cppbor::Array /* BCC */>
@@ -417,8 +449,8 @@ RemotelyProvisionedComponent::generateBcc() {
                                 .add(1 /* Issuer */, "Issuer")
                                 .add(2 /* Subject */, "Subject")
                                 .add(-4670552 /* Subject Pub Key */, coseKey)
-                                .add(-4670553 /* Key Usage */,
-                                     std::vector<uint8_t>(0x05) /* Big endian order */)
+                                .add(-4670553 /* Key Usage (little-endian order) */,
+                                     std::vector<uint8_t>{0x20} /* keyCertSign = 1<<5 */)
                                 .canonicalize()
                                 .encode();
     auto coseSign1 = constructCoseSign1(privKey,       /* signing key */
