@@ -252,10 +252,6 @@ class KeyMintAidlTestBase : public ::testing::TestWithParam<string> {
     const vector<KeyParameter>& SecLevelAuthorizations(
             const vector<KeyCharacteristics>& key_characteristics, SecurityLevel securityLevel);
 
-    AuthorizationSet HwEnforcedAuthorizations(
-            const vector<KeyCharacteristics>& key_characteristics);
-    AuthorizationSet SwEnforcedAuthorizations(
-            const vector<KeyCharacteristics>& key_characteristics);
     ErrorCode UseAesKey(const vector<uint8_t>& aesKeyBlob);
     ErrorCode UseHmacKey(const vector<uint8_t>& hmacKeyBlob);
     ErrorCode UseRsaKey(const vector<uint8_t>& rsaKeyBlob);
@@ -280,12 +276,16 @@ bool verify_attestation_record(const string& challenge,                //
                                const vector<uint8_t>& attestation_cert);
 string bin2hex(const vector<uint8_t>& data);
 X509_Ptr parse_cert_blob(const vector<uint8_t>& blob);
+vector<uint8_t> make_name_from_str(const string& name);
+AuthorizationSet HwEnforcedAuthorizations(const vector<KeyCharacteristics>& key_characteristics);
+AuthorizationSet SwEnforcedAuthorizations(const vector<KeyCharacteristics>& key_characteristics);
 ::testing::AssertionResult ChainSignaturesAreValid(const vector<Certificate>& chain);
 
 #define INSTANTIATE_KEYMINT_AIDL_TEST(name)                                          \
     INSTANTIATE_TEST_SUITE_P(PerInstance, name,                                      \
                              testing::ValuesIn(KeyMintAidlTestBase::build_params()), \
-                             ::android::PrintInstanceNameToString)
+                             ::android::PrintInstanceNameToString);                  \
+    GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(name);
 
 }  // namespace test
 
