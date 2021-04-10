@@ -26,29 +26,6 @@ namespace aidl::android::hardware::security::keymint::test {
 
 namespace {
 
-vector<uint8_t> make_name_from_str(const string& name) {
-    X509_NAME_Ptr x509_name(X509_NAME_new());
-    EXPECT_TRUE(x509_name.get() != nullptr);
-    if (!x509_name) return {};
-
-    EXPECT_EQ(1, X509_NAME_add_entry_by_txt(x509_name.get(),  //
-                                            "CN",             //
-                                            MBSTRING_ASC,
-                                            reinterpret_cast<const uint8_t*>(name.c_str()),
-                                            -1,  // len
-                                            -1,  // loc
-                                            0 /* set */));
-
-    int len = i2d_X509_NAME(x509_name.get(), nullptr /* only return length */);
-    EXPECT_GT(len, 0);
-
-    vector<uint8_t> retval(len);
-    uint8_t* p = retval.data();
-    i2d_X509_NAME(x509_name.get(), &p);
-
-    return retval;
-}
-
 bool IsSelfSigned(const vector<Certificate>& chain) {
     if (chain.size() != 1) return false;
     return ChainSignaturesAreValid(chain);
@@ -228,6 +205,36 @@ TEST_P(AttestKeyTest, AllEcCurves) {
         // Bail early if anything failed.
         if (HasFailure()) return;
     }
+}
+
+TEST_P(AttestKeyTest, AttestWithNonAttestKey) {
+    // Create non-attestaton key.
+    AttestationKey non_attest_key;
+    vector<KeyCharacteristics> non_attest_key_characteristics;
+    vector<Certificate> non_attest_key_cert_chain;
+    ASSERT_EQ(
+            ErrorCode::OK,
+            GenerateKey(
+                    AuthorizationSetBuilder().EcdsaSigningKey(EcCurve::P_256).SetDefaultValidity(),
+                    {} /* attestation siging key */, &non_attest_key.keyBlob,
+                    &non_attest_key_characteristics, &non_attest_key_cert_chain));
+
+    EXPECT_EQ(non_attest_key_cert_chain.size(), 1);
+    EXPECT_TRUE(IsSelfSigned(non_attest_key_cert_chain));
+
+    // Attempt to sign attestation with non-attest key.
+    vector<uint8_t> attested_key_blob;
+    vector<KeyCharacteristics> attested_key_characteristics;
+    vector<Certificate> attested_key_cert_chain;
+    EXPECT_EQ(ErrorCode::INCOMPATIBLE_PURPOSE,
+              GenerateKey(AuthorizationSetBuilder()
+                                  .EcdsaSigningKey(EcCurve::P_256)
+                                  .Authorization(TAG_NO_AUTH_REQUIRED)
+                                  .AttestationChallenge("foo")
+                                  .AttestationApplicationId("bar")
+                                  .SetDefaultValidity(),
+                          non_attest_key, &attested_key_blob, &attested_key_characteristics,
+                          &attested_key_cert_chain));
 }
 
 INSTANTIATE_KEYMINT_AIDL_TEST(AttestKeyTest);
