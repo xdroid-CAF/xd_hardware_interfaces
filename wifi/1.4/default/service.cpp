@@ -21,6 +21,7 @@
 #include <utils/StrongPointer.h>
 #include <hwbinder/ProcessState.h>
 #include <cutils/properties.h>
+#include <signal.h>
 
 #include "wifi.h"
 #include "wifi_feature_flags.h"
@@ -58,6 +59,7 @@ int main(int /*argc*/, char** argv) {
 #ifdef ARCH_ARM_32
     android::hardware::ProcessState::initWithMmapSize(getHWBinderMmapSize());
 #endif /* ARCH_ARM_32 */
+    signal(SIGPIPE, SIG_IGN);
     android::base::InitLogging(
         argv, android::base::LogdLogger(android::base::SYSTEM));
     LOG(INFO) << "Wifi Hal is booting up...";
