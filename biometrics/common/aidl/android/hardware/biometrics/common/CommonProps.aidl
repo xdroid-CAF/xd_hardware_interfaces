@@ -16,7 +16,7 @@
 
 package android.hardware.biometrics.common;
 
-import android.hardware.biometrics.common.HardwareInfo;
+import android.hardware.biometrics.common.ComponentInfo;
 import android.hardware.biometrics.common.SensorStrength;
 
 @VintfStability
@@ -33,7 +33,7 @@ parcelable CommonProps {
      * A statically configured strength for this sensor. See the SensorStrength interface for more
      * information.
      */
-    SensorStrength sensorStrength;
+    SensorStrength sensorStrength = SensorStrength.CONVENIENCE;
 
     /**
      * The maximum number of enrollments that a single user can have. Statically configured.
@@ -41,7 +41,7 @@ parcelable CommonProps {
     int maxEnrollmentsPerUser;
 
     /**
-     * A list of hardware information for subsystems that pertain to this biometric sensor.
+     * A list of component information for subsystems that pertain to this biometric sensor.
      */
-    HardwareInfo[] hardwareInfo;
+    ComponentInfo[] componentInfo;
 }

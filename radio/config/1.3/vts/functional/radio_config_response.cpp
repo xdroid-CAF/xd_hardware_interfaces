@@ -18,7 +18,7 @@
 
 // SimSlotStatus slotStatus;
 
-RadioConfigResponse::RadioConfigResponse(RadioConfigHidlTest& parent) : parent(parent) {}
+RadioConfigResponse::RadioConfigResponse(RadioResponseWaiter& parent) : parent(parent) {}
 
 Return<void> RadioConfigResponse::getSimSlotsStatusResponse(
         const ::android::hardware::radio::V1_0::RadioResponseInfo& /* info */,
@@ -64,7 +64,9 @@ Return<void> RadioConfigResponse::setModemsConfigResponse(
 }
 
 Return<void> RadioConfigResponse::getHalDeviceCapabilitiesResponse(
-        const ::android::hardware::radio::V1_6::RadioResponseInfo& /* info */,
-        const ::android::hardware::radio::config::V1_3::HalDeviceCapabilities& /* capabilities */) {
+        const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+        const ::android::hardware::radio::config::V1_3::HalDeviceCapabilities& capabilities) {
+    halDeviceCapabilities = capabilities;
+    parent.notify(info.serial);
     return Void();
 }

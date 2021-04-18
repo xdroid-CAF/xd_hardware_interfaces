@@ -32,6 +32,8 @@ namespace hal = ::android::hardware::neuralnetworks;
 // Shorthands
 namespace aidl::android::hardware::neuralnetworks {
 namespace aidl_hal = ::aidl::android::hardware::neuralnetworks;
+namespace hal = ::android::hardware::neuralnetworks;
+namespace nn = ::android::nn;
 }  // namespace aidl::android::hardware::neuralnetworks
 
 // Shorthands
@@ -71,8 +73,8 @@ nn::GeneralResult<std::reference_wrapper<const nn::Request>> flushDataFromPointe
 nn::GeneralResult<void> unflushDataFromSharedToPointer(
         const nn::Request& request, const std::optional<nn::Request>& maybeRequestInShared);
 
-std::vector<uint32_t> countNumberOfConsumers(size_t numberOfOperands,
-                                             const std::vector<nn::Operation>& operations);
+nn::GeneralResult<std::vector<uint32_t>> countNumberOfConsumers(
+        size_t numberOfOperands, const std::vector<nn::Operation>& operations);
 
 nn::GeneralResult<hidl_memory> createHidlMemoryFromSharedMemory(const nn::SharedMemory& memory);
 nn::GeneralResult<nn::SharedMemory> createSharedMemoryFromHidlMemory(const hidl_memory& memory);

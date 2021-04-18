@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -33,7 +34,6 @@
 package android.hardware.biometrics.face;
 @VintfStability
 interface ISessionCallback {
-  void onStateChanged(in int cookie, in android.hardware.biometrics.face.SessionState state);
   void onChallengeGenerated(in long challenge);
   void onChallengeRevoked(in long challenge);
   void onAuthenticationFrame(in android.hardware.biometrics.face.AuthenticationFrame frame);
@@ -52,4 +52,5 @@ interface ISessionCallback {
   void onEnrollmentsRemoved(in int[] enrollmentIds);
   void onAuthenticatorIdRetrieved(in long authenticatorId);
   void onAuthenticatorIdInvalidated(in long newAuthenticatorId);
+  void onSessionClosed();
 }

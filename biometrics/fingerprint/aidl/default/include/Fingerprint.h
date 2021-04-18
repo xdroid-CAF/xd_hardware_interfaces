@@ -18,9 +18,13 @@
 
 #include <aidl/android/hardware/biometrics/fingerprint/BnFingerprint.h>
 
+#include "FakeFingerprintEngine.h"
+#include "Session.h"
+#include "WorkerThread.h"
+
 namespace aidl::android::hardware::biometrics::fingerprint {
 
-class Fingerprint final : public BnFingerprint {
+class Fingerprint : public BnFingerprint {
   public:
     Fingerprint();
 
@@ -30,7 +34,10 @@ class Fingerprint final : public BnFingerprint {
                                      const std::shared_ptr<ISessionCallback>& cb,
                                      std::shared_ptr<ISession>* out) override;
 
-    ndk::ScopedAStatus reset() override;
+  private:
+    std::unique_ptr<FakeFingerprintEngine> mEngine;
+    WorkerThread mWorker;
+    std::shared_ptr<Session> mSession;
 };
 
 }  // namespace aidl::android::hardware::biometrics::fingerprint

@@ -19,6 +19,7 @@ package android.hardware.security.keymint;
 /**
  * KeyMint error codes.  Aidl will return these error codes as service specific
  * errors in EX_SERVICE_SPECIFIC.
+ * @hide
  */
 @VintfStability
 @Backing(type="int")
@@ -105,6 +106,7 @@ enum ErrorCode {
     MISSING_NOT_AFTER = -81,
     MISSING_ISSUER_SUBJECT = -82,
     INVALID_ISSUER_SUBJECT = -83,
+    BOOT_LEVEL_EXCEEDED = -84,
 
     UNIMPLEMENTED = -100,
     VERSION_MISMATCH = -101,

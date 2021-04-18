@@ -198,8 +198,12 @@ class InvalidPreparedModel : public BnPreparedModel {
                 static_cast<int32_t>(ErrorStatus::GENERAL_FAILURE));
     }
     ndk::ScopedAStatus executeFenced(const Request&, const std::vector<ndk::ScopedFileDescriptor>&,
-                                     bool, int64_t, int64_t, int64_t, ndk::ScopedFileDescriptor*,
-                                     std::shared_ptr<IFencedExecutionCallback>*) override {
+                                     bool, int64_t, int64_t, int64_t,
+                                     FencedExecutionResult*) override {
+        return ndk::ScopedAStatus::fromServiceSpecificError(
+                static_cast<int32_t>(ErrorStatus::GENERAL_FAILURE));
+    }
+    ndk::ScopedAStatus configureExecutionBurst(std::shared_ptr<IBurst>*) override {
         return ndk::ScopedAStatus::fromServiceSpecificError(
                 static_cast<int32_t>(ErrorStatus::GENERAL_FAILURE));
     }
@@ -333,18 +337,18 @@ class MemoryDomainAllocateTest : public MemoryDomainTestBase,
                               const std::shared_ptr<IPreparedModel>& model2) {
         validateAllocate({
                 .preparedModels = {model1, model2},
-                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                               {.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                               {.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
         });
         validateAllocate({
                 .preparedModels = {model1, model2},
-                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
-                .outputRoles = {{.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
+                .outputRoles = {{.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
         });
         validateAllocate({
                 .preparedModels = {model1, model2},
-                .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                                {.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+                .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                                {.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
         });
     }
 };
@@ -366,13 +370,13 @@ TEST_P(MemoryDomainAllocateTest, NullptrPreparedModel) {
     // Test with nullptr prepared model as input role.
     validateAllocate({
             .preparedModels = {nullptr},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 
     // Test with nullptr prepared model as output role.
     validateAllocate({
             .preparedModels = {nullptr},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -383,13 +387,13 @@ TEST_P(MemoryDomainAllocateTest, InvalidPreparedModel) {
     // Test with invalid prepared model as input role.
     validateAllocate({
             .preparedModels = {invalidPreparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 
     // Test with invalid prepared model as output role.
     validateAllocate({
             .preparedModels = {invalidPreparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -400,13 +404,13 @@ TEST_P(MemoryDomainAllocateTest, InvalidModelIndex) {
     // This should fail, because the model index is out of bound.
     validateAllocate({
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
     });
 
     // This should fail, because the model index is out of bound.
     validateAllocate({
             .preparedModels = {preparedModel},
-            .outputRoles = {{.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -417,30 +421,30 @@ TEST_P(MemoryDomainAllocateTest, InvalidIOIndex) {
     // This should fail, because the model only has one input.
     validateAllocate({
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 1, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 1, .probability = 1.0f}},
     });
 
     // This should fail, because the model only has one output.
     validateAllocate({
             .preparedModels = {preparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 1, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 1, .probability = 1.0f}},
     });
 }
 
-TEST_P(MemoryDomainAllocateTest, InvalidFrequency) {
+TEST_P(MemoryDomainAllocateTest, InvalidProbability) {
     auto preparedModel = createConvPreparedModel(kTestOperand);
     if (preparedModel == nullptr) return;
 
     for (float invalidFreq : {10.0f, 0.0f, -0.5f}) {
-        // Test with invalid frequency for input roles.
+        // Test with invalid probability for input roles.
         validateAllocate({
                 .preparedModels = {preparedModel},
-                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = invalidFreq}},
+                .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = invalidFreq}},
         });
-        // Test with invalid frequency for output roles.
+        // Test with invalid probability for output roles.
         validateAllocate({
                 .preparedModels = {preparedModel},
-                .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = invalidFreq}},
+                .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = invalidFreq}},
         });
     }
 }
@@ -452,25 +456,25 @@ TEST_P(MemoryDomainAllocateTest, SameRoleSpecifiedTwice) {
     // Same role with same model index.
     validateAllocate({
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                           {.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                           {.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
     validateAllocate({
             .preparedModels = {preparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                            {.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                            {.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 
     // Different model indexes, but logically referring to the same role.
     validateAllocate({
             .preparedModels = {preparedModel, preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                           {.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                           {.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
     });
     validateAllocate({
             .preparedModels = {preparedModel, preparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f},
-                            {.modelIndex = 1, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f},
+                            {.modelIndex = 1, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -549,12 +553,12 @@ TEST_P(MemoryDomainAllocateTest, ConflictRankBetweenRoleAndDesc) {
     validateAllocate({
             .dimensions = badDimensions,
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
     validateAllocate({
             .dimensions = badDimensions,
             .preparedModels = {preparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -568,12 +572,12 @@ TEST_P(MemoryDomainAllocateTest, ConflictDimensionsBetweenRoleAndDesc) {
     validateAllocate({
             .dimensions = badDimensions,
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
     validateAllocate({
             .dimensions = badDimensions,
             .preparedModels = {preparedModel},
-            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .frequency = 1.0f}},
+            .outputRoles = {{.modelIndex = 0, .ioIndex = 0, .probability = 1.0f}},
     });
 }
 
@@ -586,7 +590,7 @@ TEST_P(MemoryDomainAllocateTest, ConflictRankWithScalarRole) {
     validateAllocate({
             .dimensions = {1},
             .preparedModels = {preparedModel},
-            .inputRoles = {{.modelIndex = 0, .ioIndex = 2, .frequency = 1.0f}},
+            .inputRoles = {{.modelIndex = 0, .ioIndex = 2, .probability = 1.0f}},
     });
 }
 
@@ -620,7 +624,7 @@ class MemoryDomainCopyTestBase : public MemoryDomainTestBase {
 
         std::vector<BufferRole> inputRoles(inputIndexes.size()), outputRoles(outputIndexes.size());
         auto trans = [](int32_t ind) -> BufferRole {
-            return {.modelIndex = 0, .ioIndex = ind, .frequency = 1.0f};
+            return {.modelIndex = 0, .ioIndex = ind, .probability = 1.0f};
         };
         std::transform(inputIndexes.begin(), inputIndexes.end(), inputRoles.begin(), trans);
         std::transform(outputIndexes.begin(), outputIndexes.end(), outputRoles.begin(), trans);
@@ -866,6 +870,9 @@ class MemoryDomainExecutionTest
             case Executor::SYNC:
                 EXPECT_EQ(executeSync(preparedModel, request), expectedStatus);
                 break;
+            case Executor::BURST:
+                EXPECT_EQ(executeBurst(preparedModel, request), expectedStatus);
+                break;
             case Executor::FENCED:
                 EXPECT_EQ(executeFenced(preparedModel, request), expectedStatus);
                 break;
@@ -893,27 +900,55 @@ class MemoryDomainExecutionTest
 
     ErrorStatus executeFenced(const std::shared_ptr<IPreparedModel>& preparedModel,
                               const Request& request) {
-        ndk::ScopedFileDescriptor syncFence;
-        std::shared_ptr<IFencedExecutionCallback> fencedCallback;
+        FencedExecutionResult executionResult;
         const auto ret = preparedModel->executeFenced(request, {}, false, kNoDeadline,
                                                       kOmittedTimeoutDuration, kNoDuration,
-                                                      &syncFence, &fencedCallback);
+                                                      &executionResult);
         if (!ret.isOk()) {
             EXPECT_EQ(ret.getExceptionCode(), EX_SERVICE_SPECIFIC);
             return static_cast<ErrorStatus>(ret.getServiceSpecificError());
         }
-        if (syncFence.get() != -1) {
-            waitForSyncFence(syncFence.get());
+        if (executionResult.syncFence.get() != -1) {
+            waitForSyncFence(executionResult.syncFence.get());
         }
-        EXPECT_NE(fencedCallback, nullptr);
+        EXPECT_NE(executionResult.callback, nullptr);
 
         ErrorStatus executionStatus = ErrorStatus::GENERAL_FAILURE;
         Timing time = kNoTiming;
         Timing timeFenced = kNoTiming;
         const auto retExecutionInfo =
-                fencedCallback->getExecutionInfo(&time, &timeFenced, &executionStatus);
+                executionResult.callback->getExecutionInfo(&time, &timeFenced, &executionStatus);
         EXPECT_TRUE(retExecutionInfo.isOk());
         EXPECT_EQ(time, kNoTiming);
+        return executionStatus;
+    }
+
+    ErrorStatus executeBurst(const std::shared_ptr<IPreparedModel>& preparedModel,
+                             const Request& request) {
+        // create burst
+        std::shared_ptr<IBurst> burst;
+        auto ret = preparedModel->configureExecutionBurst(&burst);
+        EXPECT_TRUE(ret.isOk()) << ret.getDescription();
+        EXPECT_NE(nullptr, burst.get());
+        if (!ret.isOk() || burst.get() == nullptr) {
+            return ErrorStatus::GENERAL_FAILURE;
+        }
+
+        // use -1 for all memory identifier tokens
+        const std::vector<int64_t> slots(request.pools.size(), -1);
+
+        ExecutionResult executionResult;
+        ret = burst->executeSynchronously(request, slots, false, kNoDeadline,
+                                          kOmittedTimeoutDuration, &executionResult);
+
+        if (!ret.isOk()) {
+            EXPECT_EQ(ret.getExceptionCode(), EX_SERVICE_SPECIFIC);
+            return static_cast<ErrorStatus>(ret.getServiceSpecificError());
+        }
+        const ErrorStatus executionStatus = executionResult.outputSufficientSize
+                                                    ? ErrorStatus::NONE
+                                                    : ErrorStatus::OUTPUT_INSUFFICIENT_SIZE;
+        EXPECT_EQ(executionResult.timing, kNoTiming);
         return executionStatus;
     }
 
@@ -1126,12 +1161,15 @@ TEST_P(MemoryDomainExecutionTest, InvalidDimensions) {
                                        utils::toSigned(kTestOperand.dimensions).value());
     if (deviceBuffer.buffer == nullptr) return;
 
-    RequestMemoryPool sharedMemory = createSharedMemoryPool(kTestOperandDataSize);
-    RequestMemoryPool deviceMemory = createDeviceMemoryPool(deviceBuffer.token);
+    // Use an incompatible dimension and make sure the length matches with the bad dimension.
     auto badDimensions = utils::toSigned(kTestOperand.dimensions).value();
     badDimensions[0] = 2;
+    const uint32_t badTestOperandDataSize = kTestOperandDataSize * 2;
+
+    RequestMemoryPool sharedMemory = createSharedMemoryPool(badTestOperandDataSize);
+    RequestMemoryPool deviceMemory = createDeviceMemoryPool(deviceBuffer.token);
     RequestArgument sharedMemoryArg = {
-            .location = {.poolIndex = 0, .offset = 0, .length = kTestOperandDataSize},
+            .location = {.poolIndex = 0, .offset = 0, .length = badTestOperandDataSize},
             .dimensions = badDimensions};
     RequestArgument deviceMemoryArg = {.location = {.poolIndex = 1}};
     RequestArgument deviceMemoryArgWithBadDimensions = {.location = {.poolIndex = 1},
@@ -1157,7 +1195,7 @@ TEST_P(MemoryDomainExecutionTest, InvalidDimensions) {
                   ErrorStatus::GENERAL_FAILURE);
 }
 
-const auto kExecutorChoices = testing::Values(Executor::SYNC, Executor::FENCED);
+const auto kExecutorChoices = testing::Values(Executor::SYNC, Executor::BURST, Executor::FENCED);
 
 std::string printMemoryDomainExecutionTest(
         const testing::TestParamInfo<MemoryDomainExecutionTestParam>& info) {

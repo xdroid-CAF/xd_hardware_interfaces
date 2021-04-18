@@ -20,6 +20,7 @@ import android.hardware.security.keymint.SecurityLevel;
 
 /**
  * KeyMintHardwareInfo is the hardware information returned by calling KeyMint getHardwareInfo()
+ * @hide
  */
 @VintfStability
 @RustDerive(Clone=true, Eq=true, PartialEq=true, Ord=true, PartialOrd=true, Hash=true)
@@ -34,7 +35,7 @@ parcelable KeyMintHardwareInfo {
 
     /* securityLevel is the security level of the IKeyMintDevice implementation accessed
      * through this aidl package.  */
-    SecurityLevel securityLevel;
+    SecurityLevel securityLevel = SecurityLevel.SOFTWARE;
 
     /* keyMintName is the name of the IKeyMintDevice implementation.  */
     @utf8InCpp String keyMintName;

@@ -130,7 +130,7 @@ void FrontendCallback::scanTest(sp<IFrontend>& frontend, FrontendConfig config,
         return;
     }
 
-    uint32_t targetFrequency = getTargetFrequency(config.settings, config.type);
+    uint32_t targetFrequency = getTargetFrequency(config.settings);
     if (type == FrontendScanType::SCAN_BLIND) {
         // reset the frequency in the scan configuration to test blind scan. The settings param of
         // passed in means the real input config on the transponder connected to the DUT.
@@ -184,64 +184,59 @@ wait:
     mScanMsgProcessed = true;
 }
 
-uint32_t FrontendCallback::getTargetFrequency(FrontendSettings settings, FrontendType type) {
-    switch (type) {
-        case FrontendType::ANALOG:
+uint32_t FrontendCallback::getTargetFrequency(FrontendSettings settings) {
+    switch (settings.getDiscriminator()) {
+        case FrontendSettings::hidl_discriminator::analog:
             return settings.analog().frequency;
-        case FrontendType::ATSC:
+        case FrontendSettings::hidl_discriminator::atsc:
             return settings.atsc().frequency;
-        case FrontendType::ATSC3:
+        case FrontendSettings::hidl_discriminator::atsc3:
             return settings.atsc3().frequency;
-        case FrontendType::DVBC:
+        case FrontendSettings::hidl_discriminator::dvbc:
             return settings.dvbc().frequency;
-        case FrontendType::DVBS:
+        case FrontendSettings::hidl_discriminator::dvbs:
             return settings.dvbs().frequency;
-        case FrontendType::DVBT:
+        case FrontendSettings::hidl_discriminator::dvbt:
             return settings.dvbt().frequency;
-        case FrontendType::ISDBS:
+        case FrontendSettings::hidl_discriminator::isdbs:
             return settings.isdbs().frequency;
-        case FrontendType::ISDBS3:
+        case FrontendSettings::hidl_discriminator::isdbs3:
             return settings.isdbs3().frequency;
-        case FrontendType::ISDBT:
+        case FrontendSettings::hidl_discriminator::isdbt:
             return settings.isdbt().frequency;
-        default:
-            return 0;
     }
 }
 
 void FrontendCallback::resetBlindScanStartingFrequency(FrontendConfig& config,
                                                        uint32_t resetingFreq) {
-    switch (config.type) {
-        case FrontendType::ANALOG:
+    switch (config.settings.getDiscriminator()) {
+        case FrontendSettings::hidl_discriminator::analog:
             config.settings.analog().frequency = resetingFreq;
             break;
-        case FrontendType::ATSC:
+        case FrontendSettings::hidl_discriminator::atsc:
             config.settings.atsc().frequency = resetingFreq;
             break;
-        case FrontendType::ATSC3:
+        case FrontendSettings::hidl_discriminator::atsc3:
             config.settings.atsc3().frequency = resetingFreq;
             break;
-        case FrontendType::DVBC:
+        case FrontendSettings::hidl_discriminator::dvbc:
             config.settings.dvbc().frequency = resetingFreq;
             break;
-        case FrontendType::DVBS:
+        case FrontendSettings::hidl_discriminator::dvbs:
             config.settings.dvbs().frequency = resetingFreq;
             break;
-        case FrontendType::DVBT:
+        case FrontendSettings::hidl_discriminator::dvbt:
             config.settings.dvbt().frequency = resetingFreq;
             break;
-        case FrontendType::ISDBS:
+        case FrontendSettings::hidl_discriminator::isdbs:
             config.settings.isdbs().frequency = resetingFreq;
             break;
-        case FrontendType::ISDBS3:
+        case FrontendSettings::hidl_discriminator::isdbs3:
             config.settings.isdbs3().frequency = resetingFreq;
             break;
-        case FrontendType::ISDBT:
+        case FrontendSettings::hidl_discriminator::isdbt:
             config.settings.isdbt().frequency = resetingFreq;
             break;
-        default:
-            // do nothing
-            return;
     }
 }
 
@@ -302,6 +297,36 @@ AssertionResult FrontendTests::getFrontendDtmbCaps(uint32_t id) {
     Result status;
     mService->getFrontendDtmbCapabilities(
             id, [&](Result result, const FrontendDtmbCapabilities& /*caps*/) { status = result; });
+    return AssertionResult(status == Result::SUCCESS);
+}
+
+AssertionResult FrontendTests::linkCiCam(uint32_t ciCamId) {
+    sp<android::hardware::tv::tuner::V1_1::IFrontend> frontend_1_1;
+    frontend_1_1 = android::hardware::tv::tuner::V1_1::IFrontend::castFrom(mFrontend);
+    if (frontend_1_1 == nullptr) {
+        EXPECT_TRUE(false) << "Couldn't get 1.1 IFrontend from the Hal implementation.";
+        return failure();
+    }
+
+    Result status;
+    uint32_t ltsId;
+    frontend_1_1->linkCiCam(ciCamId, [&](Result r, uint32_t id) {
+        status = r;
+        ltsId = id;
+    });
+
+    return AssertionResult(status == Result::SUCCESS);
+}
+
+AssertionResult FrontendTests::unlinkCiCam(uint32_t ciCamId) {
+    sp<android::hardware::tv::tuner::V1_1::IFrontend> frontend_1_1;
+    frontend_1_1 = android::hardware::tv::tuner::V1_1::IFrontend::castFrom(mFrontend);
+    if (frontend_1_1 == nullptr) {
+        EXPECT_TRUE(false) << "Couldn't get 1.1 IFrontend from the Hal implementation.";
+        return failure();
+    }
+
+    Result status = frontend_1_1->unlinkCiCam(ciCamId);
     return AssertionResult(status == Result::SUCCESS);
 }
 
@@ -460,11 +485,18 @@ void FrontendTests::getFrontendIdByType(FrontendType feType, uint32_t& feId) {
 }
 
 void FrontendTests::tuneTest(FrontendConfig frontendConf) {
+    if (!frontendConf.enable) {
+        return;
+    }
     uint32_t feId;
     getFrontendIdByType(frontendConf.type, feId);
     ASSERT_TRUE(feId != INVALID_ID);
     ASSERT_TRUE(openFrontendById(feId));
     ASSERT_TRUE(setFrontendCallback());
+    if (frontendConf.canConnectToCiCam) {
+        ASSERT_TRUE(linkCiCam(frontendConf.ciCamId));
+        ASSERT_TRUE(unlinkCiCam(frontendConf.ciCamId));
+    }
     ASSERT_TRUE(tuneFrontend(frontendConf, false /*testWithDemux*/));
     verifyFrontendStatusExt1_1(frontendConf.tuneStatusTypes, frontendConf.expectTuneStatuses);
     ASSERT_TRUE(stopTuneFrontend(false /*testWithDemux*/));
@@ -472,6 +504,9 @@ void FrontendTests::tuneTest(FrontendConfig frontendConf) {
 }
 
 void FrontendTests::scanTest(FrontendConfig frontendConf, FrontendScanType scanType) {
+    if (!frontendConf.enable) {
+        return;
+    }
     uint32_t feId;
     getFrontendIdByType(frontendConf.type, feId);
     ASSERT_TRUE(feId != INVALID_ID);

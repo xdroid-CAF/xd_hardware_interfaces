@@ -80,7 +80,7 @@ INSTANTIATE_REM_PROV_AIDL_TEST(GenerateKeyTests);
 /**
  * Generate and validate a production-mode key.  MAC tag can't be verified.
  */
-TEST_P(GenerateKeyTests, DISABLED_generateEcdsaP256Key_prodMode) {
+TEST_P(GenerateKeyTests, generateEcdsaP256Key_prodMode) {
     MacedPublicKey macedPubKey;
     bytevec privateKeyBlob;
     bool testMode = false;
@@ -97,9 +97,9 @@ TEST_P(GenerateKeyTests, DISABLED_generateEcdsaP256Key_prodMode) {
     ASSERT_NE(protParms, nullptr);
     ASSERT_EQ(cppbor::prettyPrint(protParms->value()), "{\n  1 : 5,\n}");
 
-    auto unprotParms = coseMac0->asArray()->get(kCoseMac0UnprotectedParams)->asBstr();
+    auto unprotParms = coseMac0->asArray()->get(kCoseMac0UnprotectedParams)->asMap();
     ASSERT_NE(unprotParms, nullptr);
-    ASSERT_EQ(unprotParms->value().size(), 0);
+    ASSERT_EQ(unprotParms->size(), 0);
 
     auto payload = coseMac0->asArray()->get(kCoseMac0Payload)->asBstr();
     ASSERT_NE(payload, nullptr);
@@ -133,7 +133,7 @@ TEST_P(GenerateKeyTests, DISABLED_generateEcdsaP256Key_prodMode) {
 /**
  * Generate and validate a test-mode key.
  */
-TEST_P(GenerateKeyTests, DISABLED_generateEcdsaP256Key_testMode) {
+TEST_P(GenerateKeyTests, generateEcdsaP256Key_testMode) {
     MacedPublicKey macedPubKey;
     bytevec privateKeyBlob;
     bool testMode = true;
@@ -150,9 +150,9 @@ TEST_P(GenerateKeyTests, DISABLED_generateEcdsaP256Key_testMode) {
     ASSERT_NE(protParms, nullptr);
     ASSERT_EQ(cppbor::prettyPrint(protParms->value()), "{\n  1 : 5,\n}");
 
-    auto unprotParms = coseMac0->asArray()->get(kCoseMac0UnprotectedParams)->asBstr();
+    auto unprotParms = coseMac0->asArray()->get(kCoseMac0UnprotectedParams)->asMap();
     ASSERT_NE(unprotParms, nullptr);
-    ASSERT_EQ(unprotParms->value().size(), 0);
+    ASSERT_EQ(unprotParms->size(), 0);
 
     auto payload = coseMac0->asArray()->get(kCoseMac0Payload)->asBstr();
     ASSERT_NE(payload, nullptr);
@@ -224,14 +224,15 @@ class CertificateRequestTest : public VtsRemotelyProvisionedComponentTests {
  * Generate an empty certificate request in test mode, and decrypt and verify the structure and
  * content.
  */
-TEST_P(CertificateRequestTest, DISABLED_EmptyRequest_testMode) {
+TEST_P(CertificateRequestTest, EmptyRequest_testMode) {
     bool testMode = true;
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto challenge = randomBytes(32);
-    auto status = provisionable_->generateCertificateRequest(testMode, {} /* keysToSign */,
-                                                             eekChain_.chain, challenge,
-                                                             &keysToSignMac, &protectedData);
+    auto status = provisionable_->generateCertificateRequest(
+            testMode, {} /* keysToSign */, eekChain_.chain, challenge, &deviceInfo, &protectedData,
+            &keysToSignMac);
     ASSERT_TRUE(status.isOk()) << status.getMessage();
 
     auto [parsedProtectedData, _, protDataErrMsg] = cppbor::parse(protectedData.protectedData);
@@ -279,7 +280,7 @@ TEST_P(CertificateRequestTest, DISABLED_EmptyRequest_testMode) {
                                          .add(ALGORITHM, HMAC_256)
                                          .canonicalize()
                                          .encode())
-                            .add(cppbor::Bstr())             // unprotected
+                            .add(cppbor::Map())              // unprotected
                             .add(cppbor::Array().encode())   // payload (keysToSign)
                             .add(std::move(keysToSignMac));  // tag
 
@@ -294,14 +295,15 @@ TEST_P(CertificateRequestTest, DISABLED_EmptyRequest_testMode) {
  * TODO(swillden): Get a valid GEEK and use it so the generation can succeed, though we won't be
  * able to decrypt.
  */
-TEST_P(CertificateRequestTest, DISABLED_EmptyRequest_prodMode) {
+TEST_P(CertificateRequestTest, EmptyRequest_prodMode) {
     bool testMode = false;
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto challenge = randomBytes(32);
-    auto status = provisionable_->generateCertificateRequest(testMode, {} /* keysToSign */,
-                                                             eekChain_.chain, challenge,
-                                                             &keysToSignMac, &protectedData);
+    auto status = provisionable_->generateCertificateRequest(
+            testMode, {} /* keysToSign */, eekChain_.chain, challenge, &deviceInfo, &protectedData,
+            &keysToSignMac);
     ASSERT_FALSE(status.isOk());
     ASSERT_EQ(status.getServiceSpecificError(), BnRemotelyProvisionedComponent::STATUS_INVALID_EEK);
 }
@@ -309,15 +311,17 @@ TEST_P(CertificateRequestTest, DISABLED_EmptyRequest_prodMode) {
 /**
  * Generate a non-empty certificate request in test mode.  Decrypt, parse and validate the contents.
  */
-TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_testMode) {
+TEST_P(CertificateRequestTest, NonEmptyRequest_testMode) {
     bool testMode = true;
     generateKeys(testMode, 4 /* numKeys */);
 
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto challenge = randomBytes(32);
-    auto status = provisionable_->generateCertificateRequest(
-            testMode, keysToSign_, eekChain_.chain, challenge, &keysToSignMac, &protectedData);
+    auto status = provisionable_->generateCertificateRequest(testMode, keysToSign_, eekChain_.chain,
+                                                             challenge, &deviceInfo, &protectedData,
+                                                             &keysToSignMac);
     ASSERT_TRUE(status.isOk()) << status.getMessage();
 
     auto [parsedProtectedData, _, protDataErrMsg] = cppbor::parse(protectedData.protectedData);
@@ -364,7 +368,7 @@ TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_testMode) {
                                          .add(ALGORITHM, HMAC_256)
                                          .canonicalize()
                                          .encode())
-                            .add(cppbor::Bstr())             // unprotected
+                            .add(cppbor::Map())              // unprotected
                             .add(cborKeysToSign_.encode())   // payload
                             .add(std::move(keysToSignMac));  // tag
 
@@ -379,15 +383,17 @@ TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_testMode) {
  * TODO(swillden): Get a valid GEEK and use it so the generation can succeed, though we won't be
  * able to decrypt.
  */
-TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_prodMode) {
+TEST_P(CertificateRequestTest, NonEmptyRequest_prodMode) {
     bool testMode = false;
     generateKeys(testMode, 4 /* numKeys */);
 
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto challenge = randomBytes(32);
-    auto status = provisionable_->generateCertificateRequest(
-            testMode, keysToSign_, eekChain_.chain, challenge, &keysToSignMac, &protectedData);
+    auto status = provisionable_->generateCertificateRequest(testMode, keysToSign_, eekChain_.chain,
+                                                             challenge, &deviceInfo, &protectedData,
+                                                             &keysToSignMac);
     ASSERT_FALSE(status.isOk());
     ASSERT_EQ(status.getServiceSpecificError(), BnRemotelyProvisionedComponent::STATUS_INVALID_EEK);
 }
@@ -396,15 +402,16 @@ TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_prodMode) {
  * Generate a non-empty certificate request in test mode, with prod keys.  Must fail with
  * STATUS_PRODUCTION_KEY_IN_TEST_REQUEST.
  */
-TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_prodKeyInTestCert) {
+TEST_P(CertificateRequestTest, NonEmptyRequest_prodKeyInTestCert) {
     generateKeys(false /* testMode */, 2 /* numKeys */);
 
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto challenge = randomBytes(32);
-    auto status = provisionable_->generateCertificateRequest(true /* testMode */, keysToSign_,
-                                                             eekChain_.chain, challenge,
-                                                             &keysToSignMac, &protectedData);
+    auto status = provisionable_->generateCertificateRequest(
+            true /* testMode */, keysToSign_, eekChain_.chain, challenge, &deviceInfo,
+            &protectedData, &keysToSignMac);
     ASSERT_FALSE(status.isOk());
     ASSERT_EQ(status.getServiceSpecificError(),
               BnRemotelyProvisionedComponent::STATUS_PRODUCTION_KEY_IN_TEST_REQUEST);
@@ -414,14 +421,15 @@ TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_prodKeyInTestCert) {
  * Generate a non-empty certificate request in prod mode, with test keys.  Must fail with
  * STATUS_TEST_KEY_IN_PRODUCTION_REQUEST.
  */
-TEST_P(CertificateRequestTest, DISABLED_NonEmptyRequest_testKeyInProdCert) {
+TEST_P(CertificateRequestTest, NonEmptyRequest_testKeyInProdCert) {
     generateKeys(true /* testMode */, 2 /* numKeys */);
 
     bytevec keysToSignMac;
+    DeviceInfo deviceInfo;
     ProtectedData protectedData;
     auto status = provisionable_->generateCertificateRequest(
             false /* testMode */, keysToSign_, eekChain_.chain, randomBytes(32) /* challenge */,
-            &keysToSignMac, &protectedData);
+            &deviceInfo, &protectedData, &keysToSignMac);
     ASSERT_FALSE(status.isOk());
     ASSERT_EQ(status.getServiceSpecificError(),
               BnRemotelyProvisionedComponent::STATUS_TEST_KEY_IN_PRODUCTION_REQUEST);

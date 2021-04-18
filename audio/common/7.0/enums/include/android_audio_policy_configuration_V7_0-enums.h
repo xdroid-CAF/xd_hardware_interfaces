@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0_ENUMS_H
-#define ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0_ENUMS_H
+#ifndef ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0__ENUMS_H
+#define ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0__ENUMS_H
 
 #include <sys/types.h>
-#include <algorithm>
-#include <cctype>
+#include <regex>
+#include <string>
 
-#include <android_audio_policy_configuration_V7_0.h>
+#include <android_audio_policy_configuration_V7_0_enums.h>
 
 namespace android::audio::policy::configuration::V7_0 {
 
@@ -212,6 +212,15 @@ static inline bool isOutputDevice(const std::string& device) {
     return isOutputDevice(stringToAudioDevice(device));
 }
 
+static inline bool isTelephonyDevice(AudioDevice device) {
+    return device == AudioDevice::AUDIO_DEVICE_OUT_TELEPHONY_TX ||
+           device == AudioDevice::AUDIO_DEVICE_IN_TELEPHONY_RX;
+}
+
+static inline bool isTelephonyDevice(const std::string& device) {
+    return isTelephonyDevice(stringToAudioDevice(device));
+}
+
 static inline bool maybeVendorExtension(const std::string& s) {
     // Only checks whether the string starts with the "vendor prefix".
     static const std::string vendorPrefix = "VX_";
@@ -219,11 +228,9 @@ static inline bool maybeVendorExtension(const std::string& s) {
 }
 
 static inline bool isVendorExtension(const std::string& s) {
-    // Must match the "vendorExtension" rule from the XSD file.
-    static const std::string vendorPrefix = "VX_";
-    return maybeVendorExtension(s) &&
-           std::all_of(s.begin() + vendorPrefix.size(), s.end(),
-                       [](unsigned char c) { return c == '_' || std::isalnum(c); });
+    // Must be the same as the "vendorExtension" rule from the XSD file.
+    static const std::regex vendorExtension("VX_[A-Z0-9]{3,}_[_A-Z0-9]+");
+    return std::regex_match(s.begin(), s.end(), vendorExtension);
 }
 
 static inline bool isUnknownAudioChannelMask(const std::string& mask) {
@@ -262,6 +269,28 @@ static inline bool isUnknownAudioUsage(const std::string& usage) {
     return stringToAudioUsage(usage) == AudioUsage::UNKNOWN;
 }
 
+static inline bool isLinearPcm(AudioFormat format) {
+    switch (format) {
+        case AudioFormat::AUDIO_FORMAT_PCM_16_BIT:
+        case AudioFormat::AUDIO_FORMAT_PCM_8_BIT:
+        case AudioFormat::AUDIO_FORMAT_PCM_32_BIT:
+        case AudioFormat::AUDIO_FORMAT_PCM_8_24_BIT:
+        case AudioFormat::AUDIO_FORMAT_PCM_FLOAT:
+        case AudioFormat::AUDIO_FORMAT_PCM_24_BIT_PACKED:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static inline bool isLinearPcm(const std::string& format) {
+    return isLinearPcm(stringToAudioFormat(format));
+}
+
+static inline bool isUnknownAudioEncapsulationType(const std::string& encapsulationType) {
+    return stringToAudioEncapsulationType(encapsulationType) == AudioEncapsulationType::UNKNOWN;
+}
+
 }  // namespace android::audio::policy::configuration::V7_0
 
-#endif  // ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0_ENUMS_H
+#endif  // ANDROID_AUDIO_POLICY_CONFIGURATION_V7_0__ENUMS_H

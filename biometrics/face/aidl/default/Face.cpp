@@ -24,23 +24,33 @@ const common::SensorStrength kSensorStrength = common::SensorStrength::STRONG;
 const int kMaxEnrollmentsPerUser = 5;
 const FaceSensorType kSensorType = FaceSensorType::RGB;
 const bool kHalControlsPreview = true;
-const std::string kHwDeviceName = "faceSensor";
+const std::string kHwComponentId = "faceSensor";
 const std::string kHardwareVersion = "vendor/model/revision";
 const std::string kFirmwareVersion = "1.01";
 const std::string kSerialNumber = "00000001";
+const std::string kSwComponentId = "matchingAlgorithm";
+const std::string kSoftwareVersion = "vendor/version/revision";
 
 ndk::ScopedAStatus Face::getSensorProps(std::vector<SensorProps>* return_val) {
-    common::HardwareInfo hardware_info;
-    hardware_info.deviceName = kHwDeviceName;
-    hardware_info.hardwareVersion = kHardwareVersion;
-    hardware_info.firmwareVersion = kFirmwareVersion;
-    hardware_info.serialNumber = kSerialNumber;
+    common::ComponentInfo hw_component_info;
+    hw_component_info.componentId = kHwComponentId;
+    hw_component_info.hardwareVersion = kHardwareVersion;
+    hw_component_info.firmwareVersion = kFirmwareVersion;
+    hw_component_info.serialNumber = kSerialNumber;
+    hw_component_info.softwareVersion = "";
+
+    common::ComponentInfo sw_component_info;
+    sw_component_info.componentId = kSwComponentId;
+    sw_component_info.hardwareVersion = "";
+    sw_component_info.firmwareVersion = "";
+    sw_component_info.serialNumber = "";
+    sw_component_info.softwareVersion = kSoftwareVersion;
 
     common::CommonProps commonProps;
     commonProps.sensorId = kSensorId;
     commonProps.sensorStrength = kSensorStrength;
     commonProps.maxEnrollmentsPerUser = kMaxEnrollmentsPerUser;
-    commonProps.hardwareInfo = {std::move(hardware_info)};
+    commonProps.componentInfo = {std::move(hw_component_info), std::move(sw_component_info)};
 
     SensorProps props;
     props.commonProps = std::move(commonProps);
@@ -60,10 +70,6 @@ ndk::ScopedAStatus Face::createSession(int32_t /*sensorId*/, int32_t /*userId*/,
                                        const std::shared_ptr<ISessionCallback>& cb,
                                        std::shared_ptr<ISession>* return_val) {
     *return_val = SharedRefBase::make<Session>(cb);
-    return ndk::ScopedAStatus::ok();
-}
-
-ndk::ScopedAStatus Face::reset() {
     return ndk::ScopedAStatus::ok();
 }
 

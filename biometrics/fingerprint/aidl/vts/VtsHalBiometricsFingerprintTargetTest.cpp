@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <aidl/Gtest.h>
 #include <aidl/Vintf.h>
 #include <aidl/android/hardware/biometrics/fingerprint/BnFingerprint.h>
@@ -21,36 +22,20 @@
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 
+#include <chrono>
 #include <future>
 
 namespace aidl::android::hardware::biometrics::fingerprint {
 namespace {
 
+using namespace std::literals::chrono_literals;
+
 constexpr int kSensorId = 0;
 constexpr int kUserId = 0;
-constexpr auto kCallbackTimeout = std::chrono::seconds(1);
-
-enum class SessionCallbackMethodName {
-    kOnStateChanged,
-};
-
-struct SessionCallbackInvocation {
-    SessionCallbackMethodName method_name;
-    SessionState state;
-};
 
 class SessionCallback : public BnSessionCallback {
   public:
-    explicit SessionCallback(std::promise<SessionCallbackInvocation> invocation_promise)
-        : invocation_promise_(std::move(invocation_promise)) {}
-
-    ndk::ScopedAStatus onStateChanged(int32_t /*cookie*/, SessionState state) override {
-        SessionCallbackInvocation invocation = {};
-        invocation.method_name = SessionCallbackMethodName::kOnStateChanged;
-        invocation.state = state;
-        invocation_promise_.set_value(invocation);
-        return ndk::ScopedAStatus::ok();
-    }
+    explicit SessionCallback(std::promise<void>&& promise) : mPromise(std::move(promise)) {}
 
     ndk::ScopedAStatus onChallengeGenerated(int64_t /*challenge*/) override {
         return ndk::ScopedAStatus::ok();
@@ -73,26 +58,20 @@ class SessionCallback : public BnSessionCallback {
         return ndk::ScopedAStatus::ok();
     }
 
-    ndk::ScopedAStatus onAuthenticationSucceeded(int32_t /*enrollmentId*/,
-                                       const keymaster::HardwareAuthToken& /*hat*/) override {
+    ndk::ScopedAStatus onAuthenticationSucceeded(
+            int32_t /*enrollmentId*/, const keymaster::HardwareAuthToken& /*hat*/) override {
         return ndk::ScopedAStatus::ok();
     }
 
-    ndk::ScopedAStatus onAuthenticationFailed() override {
-        return ndk::ScopedAStatus::ok();
-    }
+    ndk::ScopedAStatus onAuthenticationFailed() override { return ndk::ScopedAStatus::ok(); }
 
     ndk::ScopedAStatus onLockoutTimed(int64_t /*durationMillis*/) override {
         return ndk::ScopedAStatus::ok();
     }
 
-    ndk::ScopedAStatus onLockoutPermanent() override {
-        return ndk::ScopedAStatus::ok();
-    }
+    ndk::ScopedAStatus onLockoutPermanent() override { return ndk::ScopedAStatus::ok(); }
 
-    ndk::ScopedAStatus onLockoutCleared() override {
-        return ndk::ScopedAStatus::ok();
-    }
+    ndk::ScopedAStatus onLockoutCleared() override { return ndk::ScopedAStatus::ok(); }
 
     ndk::ScopedAStatus onInteractionDetected() override { return ndk::ScopedAStatus::ok(); }
 
@@ -114,8 +93,13 @@ class SessionCallback : public BnSessionCallback {
         return ndk::ScopedAStatus::ok();
     }
 
+    ndk::ScopedAStatus onSessionClosed() override {
+        mPromise.set_value();
+        return ndk::ScopedAStatus::ok();
+    }
+
   private:
-    std::promise<SessionCallbackInvocation> invocation_promise_;
+    std::promise<void> mPromise;
 };
 
 class Fingerprint : public testing::TestWithParam<std::string> {
@@ -123,28 +107,33 @@ class Fingerprint : public testing::TestWithParam<std::string> {
     void SetUp() override {
         AIBinder* binder = AServiceManager_waitForService(GetParam().c_str());
         ASSERT_NE(binder, nullptr);
-        hal_ = IFingerprint::fromBinder(ndk::SpAIBinder(binder));
+        mHal = IFingerprint::fromBinder(ndk::SpAIBinder(binder));
     }
 
-    std::shared_ptr<IFingerprint> hal_;
+    std::shared_ptr<IFingerprint> mHal;
 };
 
 TEST_P(Fingerprint, AuthenticateTest) {
-    std::promise<SessionCallbackInvocation> invocation_promise;
-    std::future<SessionCallbackInvocation> invocation_future = invocation_promise.get_future();
-    std::shared_ptr<SessionCallback> session_cb =
-            ndk::SharedRefBase::make<SessionCallback>(std::move(invocation_promise));
+    auto promise = std::promise<void>{};
+    auto future = promise.get_future();
+    // Prepare the callback.
+    auto cb = ndk::SharedRefBase::make<SessionCallback>(std::move(promise));
 
+    // Create a session
     std::shared_ptr<ISession> session;
-    ASSERT_TRUE(hal_->createSession(kSensorId, kUserId, session_cb, &session).isOk());
+    ASSERT_TRUE(mHal->createSession(kSensorId, kUserId, cb, &session).isOk());
 
-    std::shared_ptr<common::ICancellationSignal> cancel_cb;
-    ASSERT_TRUE(session->authenticate(0, 0, &cancel_cb).isOk());
-    ASSERT_EQ(invocation_future.wait_for(kCallbackTimeout), std::future_status::ready);
+    // Call authenticate
+    std::shared_ptr<common::ICancellationSignal> cancellationSignal;
+    ASSERT_TRUE(session->authenticate(-1 /* operationId */, &cancellationSignal).isOk());
 
-    SessionCallbackInvocation invocation = invocation_future.get();
-    EXPECT_EQ(invocation.method_name, SessionCallbackMethodName::kOnStateChanged);
-    EXPECT_EQ(invocation.state, SessionState::AUTHENTICATING);
+    // Get the results
+    // TODO(b/166799066): test authenticate.
+
+    // Close the session
+    ASSERT_TRUE(session->close().isOk());
+    auto status = future.wait_for(1s);
+    ASSERT_EQ(status, std::future_status::ready);
 }
 
 GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(Fingerprint);
@@ -154,6 +143,7 @@ INSTANTIATE_TEST_SUITE_P(
         ::android::PrintInstanceNameToString);
 
 }  // namespace
+}  // namespace aidl::android::hardware::biometrics::fingerprint
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
@@ -161,5 +151,3 @@ int main(int argc, char** argv) {
     ABinderProcess_startThreadPool();
     return RUN_ALL_TESTS();
 }
-
-}  // namespace aidl::android::hardware::biometrics::fingerprint

@@ -15,31 +15,37 @@
  */
 
 #include "Fingerprint.h"
+
 #include "Session.h"
 
 namespace aidl::android::hardware::biometrics::fingerprint {
 namespace {
-
+constexpr size_t MAX_WORKER_QUEUE_SIZE = 5;
 constexpr int SENSOR_ID = 1;
 constexpr common::SensorStrength SENSOR_STRENGTH = common::SensorStrength::STRONG;
 constexpr int MAX_ENROLLMENTS_PER_USER = 5;
 constexpr FingerprintSensorType SENSOR_TYPE = FingerprintSensorType::REAR;
 constexpr bool SUPPORTS_NAVIGATION_GESTURES = true;
-constexpr char HW_DEVICE_NAME[] = "fingerprintSensor";
+constexpr char HW_COMPONENT_ID[] = "fingerprintSensor";
 constexpr char HW_VERSION[] = "vendor/model/revision";
 constexpr char FW_VERSION[] = "1.01";
 constexpr char SERIAL_NUMBER[] = "00000001";
+constexpr char SW_COMPONENT_ID[] = "matchingAlgorithm";
+constexpr char SW_VERSION[] = "vendor/version/revision";
 
 }  // namespace
 
-Fingerprint::Fingerprint() {}
+Fingerprint::Fingerprint()
+    : mEngine(std::make_unique<FakeFingerprintEngine>()), mWorker(MAX_WORKER_QUEUE_SIZE) {}
 
 ndk::ScopedAStatus Fingerprint::getSensorProps(std::vector<SensorProps>* out) {
-    std::vector<common::HardwareInfo> hardwareInfos = {
-            {HW_DEVICE_NAME, HW_VERSION, FW_VERSION, SERIAL_NUMBER}};
+    std::vector<common::ComponentInfo> componentInfo = {
+            {HW_COMPONENT_ID, HW_VERSION, FW_VERSION, SERIAL_NUMBER, "" /* softwareVersion */},
+            {SW_COMPONENT_ID, "" /* hardwareVersion */, "" /* firmwareVersion */,
+             "" /* serialNumber */, SW_VERSION}};
 
     common::CommonProps commonProps = {SENSOR_ID, SENSOR_STRENGTH, MAX_ENROLLMENTS_PER_USER,
-                                       hardwareInfos};
+                                       componentInfo};
 
     SensorLocation sensorLocation = {0 /* displayId */, 0 /* sensorLocationX */,
                                      0 /* sensorLocationY */, 0 /* sensorRadius */};
@@ -52,14 +58,13 @@ ndk::ScopedAStatus Fingerprint::getSensorProps(std::vector<SensorProps>* out) {
     return ndk::ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Fingerprint::createSession(int32_t /*sensorId*/, int32_t /*userId*/,
+ndk::ScopedAStatus Fingerprint::createSession(int32_t sensorId, int32_t userId,
                                               const std::shared_ptr<ISessionCallback>& cb,
                                               std::shared_ptr<ISession>* out) {
-    *out = SharedRefBase::make<Session>(cb);
-    return ndk::ScopedAStatus::ok();
-}
+    CHECK(mSession == nullptr || mSession->isClosed()) << "Open session already exists!";
 
-ndk::ScopedAStatus Fingerprint::reset() {
+    mSession = SharedRefBase::make<Session>(sensorId, userId, cb, mEngine.get(), &mWorker);
+    *out = mSession;
     return ndk::ScopedAStatus::ok();
 }
 

@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -50,7 +51,7 @@ parcelable GnssMeasurement {
   long carrierCycles;
   double carrierPhase;
   double carrierPhaseUncertainty;
-  android.hardware.gnss.GnssMultipathIndicator multipathIndicator;
+  android.hardware.gnss.GnssMultipathIndicator multipathIndicator = android.hardware.gnss.GnssMultipathIndicator.UNKNOWN;
   double snrDb;
   double agcLevelDb;
   double fullInterSignalBiasNs;

@@ -16,6 +16,7 @@
 
 package android.hardware.security.keymint;
 
+import android.hardware.security.keymint.DeviceInfo;
 import android.hardware.security.keymint.MacedPublicKey;
 import android.hardware.security.keymint.ProtectedData;
 
@@ -109,6 +110,7 @@ import android.hardware.security.keymint.ProtectedData;
  * The IRemotelyProvisionedComponent supports a test mode, allowing the generation of test key pairs
  * and test CertificateRequests. Test keys/requests are annotated as such, and the BCC used for test
  * CertificateRequests must contain freshly-generated keys, not the real BCC key pairs.
+ * @hide
  */
 @VintfStability
 interface IRemotelyProvisionedComponent {
@@ -165,7 +167,7 @@ interface IRemotelyProvisionedComponent {
      *                protected: bstr .cbor {
      *                    1 : -8,                     // Algorithm : EdDSA
      *                },
-     *                unprotected: bstr .size 0
+     *                unprotected: { },
      *                payload: bstr .cbor SignatureKey,
      *                signature: bstr PureEd25519(.cbor SignatureKeySignatureInput)
      *            ]
@@ -190,7 +192,7 @@ interface IRemotelyProvisionedComponent {
      *                protected: bstr .cbor {
      *                    1 : -8,                     // Algorithm : EdDSA
      *                },
-     *                unprotected: bstr .size 0
+     *                unprotected: { },
      *                payload: bstr .cbor Eek,
      *                signature: bstr PureEd25519(.cbor EekSignatureInput)
      *            ]
@@ -239,7 +241,7 @@ interface IRemotelyProvisionedComponent {
      *                protected : bstr .cbor {
      *                    1 : 5,                           // Algorithm : HMAC-256
      *                },
-     *                unprotected : bstr .size 0,
+     *                unprotected : { },
      *                // Payload is PublicKeys from keysToSign argument, in provided order.
      *                payload: bstr .cbor [ * PublicKey ],
      *                tag: bstr
@@ -256,7 +258,7 @@ interface IRemotelyProvisionedComponent {
      * @param out ProtectedData contains the encrypted BCC and the ephemeral MAC key used to
      *        authenticate the keysToSign (see keysToSignMac output argument).
      */
-    void generateCertificateRequest(in boolean testMode, in MacedPublicKey[] keysToSign,
-            in byte[] endpointEncryptionCertChain, in byte[] challenge, out byte[] keysToSignMac,
+    byte[] generateCertificateRequest(in boolean testMode, in MacedPublicKey[] keysToSign,
+            in byte[] endpointEncryptionCertChain, in byte[] challenge, out DeviceInfo deviceInfo,
             out ProtectedData protectedData);
 }

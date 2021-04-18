@@ -75,5 +75,18 @@ enum AcquiredInfo {
      * the image was too bright to be used for matching.
      */
     TOO_BRIGHT,
-}
 
+    /**
+     * This message may be sent during enrollment if the same area of the finger has already
+     * been captured during this enrollment session. In general, enrolling multiple areas of the
+     * same finger can help against false rejections.
+     */
+    IMMOBILE,
+
+    /**
+     * This message may be sent to notify the framework that an additional image capture is taking
+     * place. Multiple RETRYING_CAPTURE may be sent before an ACQUIRED_GOOD message is sent.
+     * However, RETRYING_CAPTURE must not be sent after ACQUIRED_GOOD is sent.
+     */
+    RETRYING_CAPTURE,
+}

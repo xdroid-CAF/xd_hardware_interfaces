@@ -14,276 +14,12 @@
  * limitations under the License.
  */
 
+#include <android-base/chrono_utils.h>
+
+#include "Generators.h"
+
 // pull in all the <= 6.0 tests
 #include "6.0/AudioPrimaryHidlHalTest.cpp"
-
-static std::vector<AudioConfig> combineAudioConfig(std::vector<xsd::AudioChannelMask> channelMasks,
-                                                   std::vector<int64_t> sampleRates,
-                                                   const std::string& format) {
-    std::vector<AudioConfig> configs;
-    configs.reserve(channelMasks.size() * sampleRates.size());
-    for (auto channelMask : channelMasks) {
-        for (auto sampleRate : sampleRates) {
-            AudioConfig config{};
-            config.base.channelMask = toString(channelMask);
-            config.base.sampleRateHz = sampleRate;
-            config.base.format = format;
-            configs.push_back(config);
-        }
-    }
-    return configs;
-}
-
-static std::tuple<std::vector<AudioInOutFlag>, bool> generateOutFlags(
-        const xsd::MixPorts::MixPort& mixPort) {
-    static const std::vector<AudioInOutFlag> offloadFlags = {
-            toString(xsd::AudioInOutFlag::AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD),
-            toString(xsd::AudioInOutFlag::AUDIO_OUTPUT_FLAG_DIRECT)};
-    std::vector<AudioInOutFlag> flags;
-    bool isOffload = false;
-    if (mixPort.hasFlags()) {
-        auto xsdFlags = mixPort.getFlags();
-        isOffload = std::find(xsdFlags.begin(), xsdFlags.end(),
-                              xsd::AudioInOutFlag::AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) !=
-                    xsdFlags.end();
-        if (!isOffload) {
-            for (auto flag : xsdFlags) {
-                if (flag != xsd::AudioInOutFlag::AUDIO_OUTPUT_FLAG_PRIMARY) {
-                    flags.push_back(toString(flag));
-                }
-            }
-        } else {
-            flags = offloadFlags;
-        }
-    }
-    return {flags, isOffload};
-}
-
-static AudioOffloadInfo generateOffloadInfo(const AudioConfigBase& base) {
-    return AudioOffloadInfo{
-            .base = base,
-            .streamType = toString(xsd::AudioStreamType::AUDIO_STREAM_MUSIC),
-            .usage = toString(xsd::AudioUsage::AUDIO_USAGE_MEDIA),
-            .bitRatePerSecond = 320,
-            .durationMicroseconds = -1,
-            .bitWidth = 16,
-            .bufferSize = 256  // arbitrary value
-    };
-}
-
-static std::vector<DeviceConfigParameter> generateOutputDeviceConfigParameters(
-        bool oneProfilePerDevice) {
-    std::vector<DeviceConfigParameter> result;
-    for (const auto& device : getDeviceParameters()) {
-        auto module =
-                getCachedPolicyConfig().getModuleFromName(std::get<PARAM_DEVICE_NAME>(device));
-        if (!module || !module->getFirstMixPorts()) break;
-        for (const auto& mixPort : module->getFirstMixPorts()->getMixPort()) {
-            if (mixPort.getRole() != xsd::Role::source) continue;  // not an output profile
-            auto [flags, isOffload] = generateOutFlags(mixPort);
-            for (const auto& profile : mixPort.getProfile()) {
-                auto configs = combineAudioConfig(profile.getChannelMasks(),
-                                                  profile.getSamplingRates(), profile.getFormat());
-                for (auto& config : configs) {
-                    // Some combinations of flags declared in the config file require special
-                    // treatment.
-                    if (isOffload) {
-                        config.offloadInfo.info(generateOffloadInfo(config.base));
-                    }
-                    result.emplace_back(device, config, flags);
-                    if (oneProfilePerDevice) break;
-                }
-                if (oneProfilePerDevice) break;
-            }
-            if (oneProfilePerDevice) break;
-        }
-    }
-    return result;
-}
-
-const std::vector<DeviceConfigParameter>& getOutputDeviceConfigParameters() {
-    static std::vector<DeviceConfigParameter> parameters =
-            generateOutputDeviceConfigParameters(false);
-    return parameters;
-}
-
-const std::vector<DeviceConfigParameter>& getOutputDeviceSingleConfigParameters() {
-    static std::vector<DeviceConfigParameter> parameters =
-            generateOutputDeviceConfigParameters(true);
-    return parameters;
-}
-
-const std::vector<DeviceConfigParameter>& getOutputDeviceInvalidConfigParameters(
-        bool generateInvalidFlags = true) {
-    static std::vector<DeviceConfigParameter> parameters = [&] {
-        std::vector<DeviceConfigParameter> result;
-        for (const auto& device : getDeviceParameters()) {
-            auto module =
-                    getCachedPolicyConfig().getModuleFromName(std::get<PARAM_DEVICE_NAME>(device));
-            if (!module || !module->getFirstMixPorts()) break;
-            bool hasRegularConfig = false, hasOffloadConfig = false;
-            for (const auto& mixPort : module->getFirstMixPorts()->getMixPort()) {
-                if (mixPort.getRole() != xsd::Role::source) continue;  // not an output profile
-                auto [validFlags, isOffload] = generateOutFlags(mixPort);
-                if ((!isOffload && hasRegularConfig) || (isOffload && hasOffloadConfig)) continue;
-                for (const auto& profile : mixPort.getProfile()) {
-                    if (!profile.hasFormat() || !profile.hasSamplingRates() ||
-                        !profile.hasChannelMasks())
-                        continue;
-                    AudioConfigBase validBase = {
-                            profile.getFormat(),
-                            static_cast<uint32_t>(profile.getSamplingRates()[0]),
-                            toString(profile.getChannelMasks()[0])};
-                    {
-                        AudioConfig config{.base = validBase};
-                        config.base.channelMask = "random_string";
-                        if (isOffload) {
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                        }
-                        result.emplace_back(device, config, validFlags);
-                    }
-                    {
-                        AudioConfig config{.base = validBase};
-                        config.base.format = "random_string";
-                        if (isOffload) {
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                        }
-                        result.emplace_back(device, config, validFlags);
-                    }
-                    if (generateInvalidFlags) {
-                        AudioConfig config{.base = validBase};
-                        if (isOffload) {
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                        }
-                        std::vector<AudioInOutFlag> flags = {"random_string", ""};
-                        result.emplace_back(device, config, flags);
-                    }
-                    if (isOffload) {
-                        {
-                            AudioConfig config{.base = validBase};
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                            config.offloadInfo.info().base.channelMask = "random_string";
-                        }
-                        {
-                            AudioConfig config{.base = validBase};
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                            config.offloadInfo.info().base.format = "random_string";
-                        }
-                        {
-                            AudioConfig config{.base = validBase};
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                            config.offloadInfo.info().streamType = "random_string";
-                        }
-                        {
-                            AudioConfig config{.base = validBase};
-                            config.offloadInfo.info(generateOffloadInfo(validBase));
-                            config.offloadInfo.info().usage = "random_string";
-                        }
-                        hasOffloadConfig = true;
-                    } else {
-                        hasRegularConfig = true;
-                    }
-                    break;
-                }
-                if (hasOffloadConfig && hasRegularConfig) break;
-            }
-        }
-        return result;
-    }();
-    return parameters;
-}
-
-static std::vector<DeviceConfigParameter> generateInputDeviceConfigParameters(
-        bool oneProfilePerDevice) {
-    std::vector<DeviceConfigParameter> result;
-    for (const auto& device : getDeviceParameters()) {
-        auto module =
-                getCachedPolicyConfig().getModuleFromName(std::get<PARAM_DEVICE_NAME>(device));
-        if (!module || !module->getFirstMixPorts()) break;
-        for (const auto& mixPort : module->getFirstMixPorts()->getMixPort()) {
-            if (mixPort.getRole() != xsd::Role::sink) continue;  // not an input profile
-            std::vector<AudioInOutFlag> flags;
-            if (mixPort.hasFlags()) {
-                std::transform(mixPort.getFlags().begin(), mixPort.getFlags().end(),
-                               std::back_inserter(flags), [](auto flag) { return toString(flag); });
-            }
-            for (const auto& profile : mixPort.getProfile()) {
-                auto configs = combineAudioConfig(profile.getChannelMasks(),
-                                                  profile.getSamplingRates(), profile.getFormat());
-                for (const auto& config : configs) {
-                    result.emplace_back(device, config, flags);
-                    if (oneProfilePerDevice) break;
-                }
-                if (oneProfilePerDevice) break;
-            }
-            if (oneProfilePerDevice) break;
-        }
-    }
-    return result;
-}
-
-const std::vector<DeviceConfigParameter>& getInputDeviceConfigParameters() {
-    static std::vector<DeviceConfigParameter> parameters =
-            generateInputDeviceConfigParameters(false);
-    return parameters;
-}
-
-const std::vector<DeviceConfigParameter>& getInputDeviceSingleConfigParameters() {
-    static std::vector<DeviceConfigParameter> parameters =
-            generateInputDeviceConfigParameters(true);
-    return parameters;
-}
-
-const std::vector<DeviceConfigParameter>& getInputDeviceInvalidConfigParameters(
-        bool generateInvalidFlags = true) {
-    static std::vector<DeviceConfigParameter> parameters = [&] {
-        std::vector<DeviceConfigParameter> result;
-        for (const auto& device : getDeviceParameters()) {
-            auto module =
-                    getCachedPolicyConfig().getModuleFromName(std::get<PARAM_DEVICE_NAME>(device));
-            if (!module || !module->getFirstMixPorts()) break;
-            bool hasConfig = false;
-            for (const auto& mixPort : module->getFirstMixPorts()->getMixPort()) {
-                if (mixPort.getRole() != xsd::Role::sink) continue;  // not an input profile
-                std::vector<AudioInOutFlag> validFlags;
-                if (mixPort.hasFlags()) {
-                    std::transform(mixPort.getFlags().begin(), mixPort.getFlags().end(),
-                                   std::back_inserter(validFlags),
-                                   [](auto flag) { return toString(flag); });
-                }
-                for (const auto& profile : mixPort.getProfile()) {
-                    if (!profile.hasFormat() || !profile.hasSamplingRates() ||
-                        !profile.hasChannelMasks())
-                        continue;
-                    AudioConfigBase validBase = {
-                            profile.getFormat(),
-                            static_cast<uint32_t>(profile.getSamplingRates()[0]),
-                            toString(profile.getChannelMasks()[0])};
-                    {
-                        AudioConfig config{.base = validBase};
-                        config.base.channelMask = "random_string";
-                        result.emplace_back(device, config, validFlags);
-                    }
-                    {
-                        AudioConfig config{.base = validBase};
-                        config.base.format = "random_string";
-                        result.emplace_back(device, config, validFlags);
-                    }
-                    if (generateInvalidFlags) {
-                        AudioConfig config{.base = validBase};
-                        std::vector<AudioInOutFlag> flags = {"random_string", ""};
-                        result.emplace_back(device, config, flags);
-                    }
-                    hasConfig = true;
-                    break;
-                }
-                if (hasConfig) break;
-            }
-        }
-        return result;
-    }();
-    return parameters;
-}
 
 class InvalidInputConfigNoFlagsTest : public AudioHidlTestWithDeviceConfigParameter {};
 TEST_P(InvalidInputConfigNoFlagsTest, InputBufferSizeTest) {
@@ -753,3 +489,353 @@ TEST_P(SingleConfigInputStreamTest, UpdateInvalidSinkMetadata) {
                 << ::testing::PrintToString(metadata);
     }
 }
+
+static const std::vector<DeviceConfigParameter>& getOutputDevicePcmOnlyConfigParameters() {
+    static const std::vector<DeviceConfigParameter> parameters = [] {
+        auto allParams = getOutputDeviceConfigParameters();
+        std::vector<DeviceConfigParameter> pcmParams;
+        std::copy_if(allParams.begin(), allParams.end(), std::back_inserter(pcmParams), [](auto cfg) {
+            const auto& flags = std::get<PARAM_FLAGS>(cfg);
+            return xsd::isLinearPcm(std::get<PARAM_CONFIG>(cfg).base.format)
+                   // MMAP NOIRQ and HW A/V Sync profiles use special writing protocols.
+                   &&
+                   std::find_if(flags.begin(), flags.end(),
+                                [](const auto& flag) {
+                                    return flag == toString(xsd::AudioInOutFlag::
+                                                                    AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) ||
+                                           flag == toString(xsd::AudioInOutFlag::
+                                                                    AUDIO_OUTPUT_FLAG_HW_AV_SYNC);
+                                }) == flags.end() &&
+                   !getCachedPolicyConfig()
+                            .getAttachedSinkDeviceForMixPort(
+                                    std::get<PARAM_DEVICE_NAME>(std::get<PARAM_DEVICE>(cfg)),
+                                    std::get<PARAM_PORT_NAME>(cfg))
+                            .empty();
+        });
+        return pcmParams;
+    }();
+    return parameters;
+}
+
+class PcmOnlyConfigOutputStreamTest : public OutputStreamTest {
+  public:
+    void TearDown() override {
+        releasePatchIfNeeded();
+        OutputStreamTest::TearDown();
+    }
+
+    bool canQueryPresentationPosition() const {
+        auto maybeSinkAddress =
+                getCachedPolicyConfig().getSinkDeviceForMixPort(getDeviceName(), getMixPortName());
+        // Returning 'true' when no sink is found so the test can fail later with a more clear
+        // problem description.
+        return !maybeSinkAddress.has_value() ||
+               !xsd::isTelephonyDevice(maybeSinkAddress.value().deviceType);
+    }
+
+    void createPatchIfNeeded() {
+        auto maybeSinkAddress =
+                getCachedPolicyConfig().getSinkDeviceForMixPort(getDeviceName(), getMixPortName());
+        ASSERT_TRUE(maybeSinkAddress.has_value())
+                << "No sink device found for mix port " << getMixPortName() << " (module "
+                << getDeviceName() << ")";
+        if (areAudioPatchesSupported()) {
+            AudioPortConfig source;
+            source.base.format.value(getConfig().base.format);
+            source.base.sampleRateHz.value(getConfig().base.sampleRateHz);
+            source.base.channelMask.value(getConfig().base.channelMask);
+            source.ext.mix({});
+            source.ext.mix().ioHandle = helper.getIoHandle();
+            source.ext.mix().useCase.stream({});
+            AudioPortConfig sink;
+            sink.ext.device(maybeSinkAddress.value());
+            EXPECT_OK(getDevice()->createAudioPatch(hidl_vec<AudioPortConfig>{source},
+                                                    hidl_vec<AudioPortConfig>{sink},
+                                                    returnIn(res, mPatchHandle)));
+            mHasPatch = res == Result::OK;
+        } else {
+            EXPECT_OK(stream->setDevices({maybeSinkAddress.value()}));
+        }
+    }
+
+    void releasePatchIfNeeded() {
+        if (areAudioPatchesSupported()) {
+            if (mHasPatch) {
+                EXPECT_OK(getDevice()->releaseAudioPatch(mPatchHandle));
+                mHasPatch = false;
+            }
+        } else {
+            EXPECT_OK(stream->setDevices({address}));
+        }
+    }
+
+    const std::string& getMixPortName() const { return std::get<PARAM_PORT_NAME>(GetParam()); }
+
+    void waitForPresentationPositionAdvance(StreamWriter& writer, uint64_t* firstPosition = nullptr,
+                                            uint64_t* lastPosition = nullptr) {
+        static constexpr int kWriteDurationUs = 50 * 1000;
+        static constexpr std::chrono::milliseconds kPositionChangeTimeout{10000};
+        uint64_t framesInitial;
+        TimeSpec ts;
+        // Starting / resuming of streams is asynchronous at HAL level.
+        // Sometimes HAL doesn't have enough information until the audio data actually gets
+        // consumed by the hardware.
+        bool timedOut = false;
+        res = Result::INVALID_STATE;
+        for (android::base::Timer elapsed;
+             res != Result::OK && !writer.hasError() &&
+             !(timedOut = (elapsed.duration() >= kPositionChangeTimeout));) {
+            usleep(kWriteDurationUs);
+            ASSERT_OK(stream->getPresentationPosition(returnIn(res, framesInitial, ts)));
+            ASSERT_RESULT(okOrInvalidState, res);
+        }
+        ASSERT_FALSE(writer.hasError());
+        ASSERT_FALSE(timedOut);
+
+        uint64_t frames = framesInitial;
+        for (android::base::Timer elapsed;
+             frames <= framesInitial && !writer.hasError() &&
+             !(timedOut = (elapsed.duration() >= kPositionChangeTimeout));) {
+            usleep(kWriteDurationUs);
+            ASSERT_OK(stream->getPresentationPosition(returnIn(res, frames, ts)));
+            ASSERT_RESULT(Result::OK, res);
+        }
+        EXPECT_FALSE(timedOut);
+        EXPECT_FALSE(writer.hasError());
+        EXPECT_GT(frames, framesInitial);
+        if (firstPosition) *firstPosition = framesInitial;
+        if (lastPosition) *lastPosition = frames;
+    }
+
+  private:
+    AudioPatchHandle mPatchHandle = {};
+    bool mHasPatch = false;
+};
+
+TEST_P(PcmOnlyConfigOutputStreamTest, Write) {
+    doc::test("Check that output streams opened for PCM output accepts audio data");
+    StreamWriter writer(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(writer.start());
+    EXPECT_TRUE(writer.waitForAtLeastOneCycle());
+}
+
+TEST_P(PcmOnlyConfigOutputStreamTest, PresentationPositionAdvancesWithWrites) {
+    doc::test("Check that the presentation position advances with writes");
+    if (!canQueryPresentationPosition()) {
+        GTEST_SKIP() << "Presentation position retrieval is not possible";
+    }
+
+    ASSERT_NO_FATAL_FAILURE(createPatchIfNeeded());
+    StreamWriter writer(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(writer.start());
+    ASSERT_TRUE(writer.waitForAtLeastOneCycle());
+    ASSERT_NO_FATAL_FAILURE(waitForPresentationPositionAdvance(writer));
+
+    writer.stop();
+    releasePatchIfNeeded();
+}
+
+TEST_P(PcmOnlyConfigOutputStreamTest, PresentationPositionPreservedOnStandby) {
+    doc::test("Check that the presentation position does not reset on standby");
+    if (!canQueryPresentationPosition()) {
+        GTEST_SKIP() << "Presentation position retrieval is not possible";
+    }
+
+    ASSERT_NO_FATAL_FAILURE(createPatchIfNeeded());
+    StreamWriter writer(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(writer.start());
+    ASSERT_TRUE(writer.waitForAtLeastOneCycle());
+
+    uint64_t framesInitial;
+    ASSERT_NO_FATAL_FAILURE(waitForPresentationPositionAdvance(writer, nullptr, &framesInitial));
+    writer.pause();
+    ASSERT_OK(stream->standby());
+    writer.resume();
+
+    uint64_t frames;
+    ASSERT_NO_FATAL_FAILURE(waitForPresentationPositionAdvance(writer, &frames));
+    EXPECT_GT(frames, framesInitial);
+
+    writer.stop();
+    releasePatchIfNeeded();
+}
+
+INSTANTIATE_TEST_CASE_P(PcmOnlyConfigOutputStream, PcmOnlyConfigOutputStreamTest,
+                        ::testing::ValuesIn(getOutputDevicePcmOnlyConfigParameters()),
+                        &DeviceConfigParameterToString);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(PcmOnlyConfigOutputStreamTest);
+
+static const std::vector<DeviceConfigParameter>& getInputDevicePcmOnlyConfigParameters() {
+    static const std::vector<DeviceConfigParameter> parameters = [] {
+        auto allParams = getInputDeviceConfigParameters();
+        std::vector<DeviceConfigParameter> pcmParams;
+        std::copy_if(
+                allParams.begin(), allParams.end(), std::back_inserter(pcmParams), [](auto cfg) {
+                    const auto& flags = std::get<PARAM_FLAGS>(cfg);
+                    return xsd::isLinearPcm(std::get<PARAM_CONFIG>(cfg).base.format)
+                           // MMAP NOIRQ profiles use different reading protocol,
+                           // reading h/w hotword might require Soundtrigger to be active.
+                           &&
+                           std::find_if(
+                                   flags.begin(), flags.end(),
+                                   [](const auto& flag) {
+                                       return flag == toString(
+                                                              xsd::AudioInOutFlag::
+                                                                      AUDIO_INPUT_FLAG_MMAP_NOIRQ) ||
+                                              flag == toString(xsd::AudioInOutFlag::
+                                                                       AUDIO_INPUT_FLAG_HW_HOTWORD);
+                                   }) == flags.end() &&
+                           !getCachedPolicyConfig()
+                                    .getAttachedSourceDeviceForMixPort(
+                                            std::get<PARAM_DEVICE_NAME>(
+                                                    std::get<PARAM_DEVICE>(cfg)),
+                                            std::get<PARAM_PORT_NAME>(cfg))
+                                    .empty();
+                });
+        return pcmParams;
+    }();
+    return parameters;
+}
+
+class PcmOnlyConfigInputStreamTest : public InputStreamTest {
+  public:
+    void TearDown() override {
+        releasePatchIfNeeded();
+        InputStreamTest::TearDown();
+    }
+
+    bool canQueryCapturePosition() const {
+        auto maybeSourceAddress = getCachedPolicyConfig().getSourceDeviceForMixPort(
+                getDeviceName(), getMixPortName());
+        // Returning 'true' when no source is found so the test can fail later with a more clear
+        // problem description.
+        return !maybeSourceAddress.has_value() ||
+               !xsd::isTelephonyDevice(maybeSourceAddress.value().deviceType);
+    }
+
+    void createPatchIfNeeded() {
+        auto maybeSourceAddress = getCachedPolicyConfig().getSourceDeviceForMixPort(
+                getDeviceName(), getMixPortName());
+        ASSERT_TRUE(maybeSourceAddress.has_value())
+                << "No source device found for mix port " << getMixPortName() << " (module "
+                << getDeviceName() << ")";
+        if (areAudioPatchesSupported()) {
+            AudioPortConfig source;
+            source.ext.device(maybeSourceAddress.value());
+            AudioPortConfig sink;
+            sink.base.format.value(getConfig().base.format);
+            sink.base.sampleRateHz.value(getConfig().base.sampleRateHz);
+            sink.base.channelMask.value(getConfig().base.channelMask);
+            sink.ext.mix({});
+            sink.ext.mix().ioHandle = helper.getIoHandle();
+            sink.ext.mix().useCase.source(toString(xsd::AudioSource::AUDIO_SOURCE_MIC));
+            EXPECT_OK(getDevice()->createAudioPatch(hidl_vec<AudioPortConfig>{source},
+                                                    hidl_vec<AudioPortConfig>{sink},
+                                                    returnIn(res, mPatchHandle)));
+            mHasPatch = res == Result::OK;
+        } else {
+            EXPECT_OK(stream->setDevices({maybeSourceAddress.value()}));
+        }
+    }
+
+    void releasePatchIfNeeded() {
+        if (areAudioPatchesSupported()) {
+            if (mHasPatch) {
+                EXPECT_OK(getDevice()->releaseAudioPatch(mPatchHandle));
+                mHasPatch = false;
+            }
+        } else {
+            EXPECT_OK(stream->setDevices({address}));
+        }
+    }
+
+    void waitForCapturePositionAdvance(StreamReader& reader, uint64_t* firstPosition = nullptr,
+                                       uint64_t* lastPosition = nullptr) {
+        static constexpr int kReadDurationUs = 50 * 1000;
+        static constexpr std::chrono::milliseconds kPositionChangeTimeout{10000};
+        uint64_t framesInitial, ts;
+        // Starting / resuming of streams is asynchronous at HAL level.
+        // Sometimes HAL doesn't have enough information until the audio data actually has been
+        // produced by the hardware. Legacy HALs might return NOT_SUPPORTED when they actually
+        // mean INVALID_STATE.
+        bool timedOut = false;
+        res = Result::INVALID_STATE;
+        for (android::base::Timer elapsed;
+             res != Result::OK && !reader.hasError() &&
+             !(timedOut = (elapsed.duration() >= kPositionChangeTimeout));) {
+            usleep(kReadDurationUs);
+            ASSERT_OK(stream->getCapturePosition(returnIn(res, framesInitial, ts)));
+            ASSERT_RESULT(okOrInvalidStateOrNotSupported, res);
+        }
+        ASSERT_FALSE(reader.hasError());
+        ASSERT_FALSE(timedOut);
+
+        uint64_t frames = framesInitial;
+        for (android::base::Timer elapsed;
+             frames <= framesInitial && !reader.hasError() &&
+             !(timedOut = (elapsed.duration() >= kPositionChangeTimeout));) {
+            usleep(kReadDurationUs);
+            ASSERT_OK(stream->getCapturePosition(returnIn(res, frames, ts)));
+            ASSERT_RESULT(Result::OK, res);
+        }
+        EXPECT_FALSE(timedOut);
+        EXPECT_FALSE(reader.hasError());
+        EXPECT_GT(frames, framesInitial);
+        if (firstPosition) *firstPosition = framesInitial;
+        if (lastPosition) *lastPosition = frames;
+    }
+
+  private:
+    AudioPatchHandle mPatchHandle = {};
+    bool mHasPatch = false;
+};
+
+TEST_P(PcmOnlyConfigInputStreamTest, Read) {
+    doc::test("Check that input streams opened for PCM input retrieve audio data");
+    StreamReader reader(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(reader.start());
+    EXPECT_TRUE(reader.waitForAtLeastOneCycle());
+}
+
+TEST_P(PcmOnlyConfigInputStreamTest, CapturePositionAdvancesWithReads) {
+    doc::test("Check that the capture position advances with reads");
+    if (!canQueryCapturePosition()) {
+        GTEST_SKIP() << "Capture position retrieval is not possible";
+    }
+
+    ASSERT_NO_FATAL_FAILURE(createPatchIfNeeded());
+    StreamReader reader(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(reader.start());
+    EXPECT_TRUE(reader.waitForAtLeastOneCycle());
+    ASSERT_NO_FATAL_FAILURE(waitForCapturePositionAdvance(reader));
+}
+
+TEST_P(PcmOnlyConfigInputStreamTest, CapturePositionPreservedOnStandby) {
+    doc::test("Check that the capture position does not reset on standby");
+    if (!canQueryCapturePosition()) {
+        GTEST_SKIP() << "Capture position retrieval is not possible";
+    }
+
+    ASSERT_NO_FATAL_FAILURE(createPatchIfNeeded());
+    StreamReader reader(stream.get(), stream->getBufferSize());
+    ASSERT_TRUE(reader.start());
+    EXPECT_TRUE(reader.waitForAtLeastOneCycle());
+
+    uint64_t framesInitial;
+    ASSERT_NO_FATAL_FAILURE(waitForCapturePositionAdvance(reader, nullptr, &framesInitial));
+    reader.pause();
+    ASSERT_OK(stream->standby());
+    reader.resume();
+
+    uint64_t frames;
+    ASSERT_NO_FATAL_FAILURE(waitForCapturePositionAdvance(reader, &frames, nullptr));
+    EXPECT_GT(frames, framesInitial);
+
+    reader.stop();
+    releasePatchIfNeeded();
+}
+
+INSTANTIATE_TEST_CASE_P(PcmOnlyConfigInputStream, PcmOnlyConfigInputStreamTest,
+                        ::testing::ValuesIn(getInputDevicePcmOnlyConfigParameters()),
+                        &DeviceConfigParameterToString);
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(PcmOnlyConfigInputStreamTest);

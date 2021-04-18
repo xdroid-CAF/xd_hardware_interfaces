@@ -274,7 +274,8 @@ enum HandoverFailureMode : int32_t {
 /**
  * Overwritten from @1.5::SetupDataCallResult in order to change the suggestedRetryTime
  * to 64-bit value. In the future, this must be extended instead of overwritten.
- * Also added defaultQos, qosSessions, and handoverFailureMode in this version.
+ * Also added defaultQos, qosSessions, handoverFailureMode, pduSessionId, sliceInfo,
+ * and traffic descriptors in this version.
  */
 struct SetupDataCallResult {
     /** Data call fail cause. DataCallFailCause.NONE if no error. */
@@ -706,8 +707,10 @@ struct RegStateResult {
     RegState regState;
 
     /**
-     * Indicates the available voice radio technology, valid values as
-     * defined by RadioTechnology.
+     * Indicates the available voice radio technology, valid values as defined by RadioTechnology,
+     * except LTE_CA, which is no longer a valid value on 1.5 or above. When the device is on
+     * carrier aggregation, vendor RIL service should properly report multiple PhysicalChannelConfig
+     * elements through IRadio::currentPhysicalChannelConfigs_1_6.
      */
     RadioTechnology rat;
 
@@ -810,6 +813,11 @@ struct SliceInfo {
      * see: 3GPP TS 24.501 Section 9.11.2.8.
      */
     int32_t mappedHplmnSD;
+
+    /**
+     * Field to indicate the current status of the slice.
+     */
+    SliceStatus status;
 };
 
 /**
@@ -847,7 +855,7 @@ enum DataCallFailCause : @1.4::DataCallFailCause {
     MATCH_ALL_RULE_NOT_ALLOWED = 0x8CD,
 
     /**
-     * If connection failed for all matching URSP rules
+     * If connection failed for all matching URSP rules.
      */
     ALL_MATCHING_RULES_FAILED = 0x8CE,
 };
@@ -923,17 +931,17 @@ enum NgranBands  : @1.5::NgranBands {
  * This safe_union represents an optional DNN. DNN stands for Data Network Name
  * and represents an APN as defined in 3GPP TS 23.003.
  */
-safe_union OptionalDNN {
+safe_union OptionalDnn {
     Monostate noinit;
     string value;
 };
 
 /**
- * This safe_union represents an optional OSAppId.
+ * This safe_union represents an optional OsAppId.
  */
-safe_union OptionalOSAppId {
+safe_union OptionalOsAppId {
     Monostate noinit;
-    OSAppId value;
+    OsAppId value;
 };
 
 /**
@@ -954,21 +962,21 @@ struct TrafficDescriptor {
      * DNN stands for Data Network Name and represents an APN as defined in
      * 3GPP TS 23.003.
      */
-    OptionalDNN dnn;
+    OptionalDnn dnn;
     /**
-     * Indicates the OSId + OSAppId (used as category in Android).
+     * Indicates the OsId + OsAppId (used as category in Android).
      */
-    OptionalOSAppId osAppId;
+    OptionalOsAppId osAppId;
 };
 
 /**
- * This struct represents the OSId + OSAppId as defined in TS 24.526 Section 5.2
+ * This struct represents the OsId + OsAppId as defined in TS 24.526 Section 5.2
  */
-struct OSAppId {
+struct OsAppId {
     /**
-     * Byte array representing OSId + OSAppId. The minimum length of the array is
-     * 18 and maximum length is 272 (16 bytes for OSId + 1 byte for OSAppId length
-     * + up to 255 bytes for OSAppId).
+     * Byte array representing OsId + OsAppId. The minimum length of the array is
+     * 18 and maximum length is 272 (16 bytes for OsId + 1 byte for OsAppId length
+     * + up to 255 bytes for OsAppId).
      */
     vec<uint8_t> osAppId;
 };
@@ -983,9 +991,9 @@ struct SlicingConfig {
      */
     vec<UrspRule> urspRules;
     /**
-     * Struct containing all NSSAIs (list of slice info).
+     * List of all slices.
      */
-    Nssais nsaids;
+    vec<SliceInfo> sliceInfo;
 };
 
 /**
@@ -1008,7 +1016,6 @@ struct UrspRule {
     vec<RouteSelectionDescriptor> routeSelectionDescriptor;
 };
 
-
 /**
  * This struct represents a single route selection descriptor as defined in
  * 3GPP TS 24.526.
@@ -1019,18 +1026,6 @@ struct RouteSelectionDescriptor {
      * precedence.
      */
     uint8_t precedence;
-    /**
-     * Parameters defining this RouteSelectionDescriptor. The length of the vector
-     * must be >= 1.
-     */
-    vec<RouteSelectionDescriptorParams> routeSelectionDescriptorParams;
-};
-
-/**
- * This struct represents a route selection descriptor. A valid struct must have
- * at least one of the vectors non-empty.
- */
-struct RouteSelectionDescriptorParams {
     /**
      * Valid values are IP, IPV6 and IPV4V6.
      */
@@ -1064,47 +1059,13 @@ safe_union OptionalSscMode {
     SscMode value;
 };
 
-/**
- * This struct contains all NSSAIs (lists of slices).
- */
-struct Nssais {
-    /**
-     * These are all the slices configured by the network. This includes allowed
-     * and rejected slices, as well as slices that are neither allowed nor rejected
-     * yet. Empty vector indicates that no slices are configured, and in that case
-     * allowed and rejected vectors must be empty as well.
-     */
-    vec<SliceInfo> configured;
-    /**
-     * These are all the slices that the UE is allowed to use. All these slices
-     * must be configured as well. Empty vector indicates that no slices are
-     * allowed yet.
-     */
-    vec<SliceInfo> allowed;
-    /**
-     * These are all the slices that the UE is not allowed to use. All these slices
-     * must be configured as well. Empty vector indicates that no slices are
-     * rejected yet.
-     */
-    vec<RejectedSliceInfo> rejected;
-    /**
-     * Default configured NSSAI
-     */
-    vec<SliceInfo> defaultConfigured;
-};
-
-/**
- * This struct represents a network slice rejected by the network. It contains a
- * rejectionCause corresponding to a rejected network slice.
- */
-struct RejectedSliceInfo {
-    SliceInfo sliceInfo;
-    SliceRejectionCause rejectionCause;
-};
-
-enum SliceRejectionCause : int32_t {
-    NOT_AVAILABLE_IN_PLMN,
-    NOT_AVAILABLE_IN_REG_AREA,
+enum SliceStatus : int32_t {
+    UNKNOWN,
+    CONFIGURED, // Configured but not allowed or rejected yet
+    ALLOWED,    // Allowed to be used
+    REJECTED_NOT_AVAILABLE_IN_PLMN,     // Rejected because not available in PLMN
+    REJECTED_NOT_AVAILABLE_IN_REG_AREA, // Rejected because not available in reg area
+    DEFAULT_CONFIGURED,     // Considered valid when configured/allowed slices are not available
 };
 
 /**
@@ -1133,3 +1094,106 @@ struct ImsiEncryptionInfo {
     @1.1::ImsiEncryptionInfo base;
     PublicKeyType keyType;         // Public key type
 };
+
+/**
+ * Phonebook-record-information specified by EF_ADN(Abbreviated dialing numbers)
+ * record of SIM as per 3GPP spec 31.102 v15 Section-4.4.2.3.
+ */
+struct PhonebookRecordInfo {
+    /** Record index. 0 is used to insert a record */
+    uint32_t recordId;
+
+    /** Alpha identifier, empty string if no value */
+    string name;
+
+    /** Dialling number, empty string if no value */
+    string number;
+
+    /** Email addresses */
+    vec<string> emails;
+
+    /** Additional numbers */
+    vec<string> additionalNumbers;
+};
+
+struct PhonebookCapacity {
+    /**
+     * Maximum number of ADN records possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxAdnRecords;
+
+    /**
+     * Used ADN records in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t usedAdnRecords;
+
+    /**
+     * Maximum email records possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxEmailRecords;
+
+    /**
+     * Used email records in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t usedEmailRecords;
+
+    /**
+     * Maximum additional number records possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxAdditionalNumberRecords;
+
+    /**
+     * Used additional number records in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t usedAdditionalNumberRecords;
+
+    /**
+     * Maximum name length possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxNameLen;
+
+    /**
+     * Maximum number length possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxNumberLen;
+
+    /**
+     * Maximum email length possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxEmailLen;
+
+    /**
+     * Maximum additional number length possible in the SIM phonebook
+     * Needs to be non-negative
+     */
+    int32_t maxAdditionalNumberLen;
+};
+
+/**
+ * Enum representing the status of the received PB indication,
+ * PB_RECEIVED_OK indicates this retrieval is fine
+ * PB_RECEIVED_ERROR indicates one error happens, in general, the process
+ *   can't be restored soon.
+ * PB_RECEIVED_ABORT indicates the process is interrupted, in this case,
+ *   modem might need resources and interrupt the current process, or it is
+ *   timed out to receive all indications, and client can retry soon.
+ * PB_RECEIVED_FINAL indicates the whole process is finished with a full
+ *   chunk of phonebook data, means this is a last indication with the left
+ *   data.
+ */
+enum PbReceivedStatus : int32_t {
+    PB_RECEIVED_OK = 1,
+    PB_RECEIVED_ERROR = 2,
+    PB_RECEIVED_ABORT = 3,
+    PB_RECEIVED_FINAL = 4,
+};
+

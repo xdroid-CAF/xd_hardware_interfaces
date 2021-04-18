@@ -18,7 +18,6 @@ package android.hardware.security.keymint;
 
 import android.hardware.security.keymint.AttestationKey;
 import android.hardware.security.keymint.BeginResult;
-import android.hardware.security.keymint.ByteArray;
 import android.hardware.security.keymint.HardwareAuthToken;
 import android.hardware.security.keymint.IKeyMintOperation;
 import android.hardware.security.keymint.KeyCreationResult;
@@ -212,6 +211,7 @@ import android.hardware.security.secureclock.TimeStampToken;
  * hardwareEnforced authorization list.  Tag::OS_VERSION, Tag::OS_PATCHLEVEL,
  * Tag::VENDOR_PATCHLEVEL, and Tag::BOOT_PATCHLEVEL must be cryptographically bound to every
  * IKeyMintDevice key, as described in the Key Access Control section above.
+ * @hide
  */
 @VintfStability
 interface IKeyMintDevice {
@@ -761,4 +761,39 @@ interface IKeyMintDevice {
      * an EARLY_BOOT_ONLY key after this method is called must fail with Error::INVALID_KEY_BLOB.
      */
     void earlyBootEnded();
+
+    /*
+     * Called by the client to get a wrapped per-boot ephemeral key from a wrapped storage key.
+     * Clients will then use the returned per-boot ephemeral key in place of the wrapped storage
+     * key. Whenever the hardware is presented with a per-boot ephemeral key for an operation, it
+     * must use the storage key associated with that ephemeral key to perform the requested
+     * operation.
+     *
+     * Implementations should return ErrorCode::UNIMPLEMENTED if they don't support wrapped storage
+     * keys.
+     *
+     * Implementations should return ErrorCode::INVALID_ARGUMENT (as a ServiceSpecificException)
+     * if the input key blob doesn't represent a valid long-lived wrapped storage key.
+     *
+     * @param storageKeyBlob is the wrapped storage key for which the client wants a per-boot
+     *        ephemeral key
+     *
+     * @return a buffer containing the per-boot ephemeral keyblob that should henceforth be used in
+     *         place of the input storageKeyBlob
+     */
+    byte[] convertStorageKeyToEphemeral(in byte[] storageKeyBlob);
+
+    /**
+     * Called by the client to perform a KeyMint operation.
+     *
+     *  This method is added primarily as a placeholder.  Details will be fleshed before the KeyMint
+     *  V1 interface is frozen.  Until then, implementations must return ErrorCode::UNIMPLEMENTED.
+     *
+     * @param request is an encrypted buffer containing a description of the operation the client
+     *        wishes to perform.  Structure, content and encryption are TBD.
+     *
+     * @return an encrypted buffer containing the result of the operation.  Structure, content and
+     *         encryption are TBD.
+     */
+    byte[] performOperation(in byte[] request);
 }

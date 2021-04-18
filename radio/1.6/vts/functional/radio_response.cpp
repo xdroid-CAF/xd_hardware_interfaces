@@ -18,7 +18,7 @@
 
 ::android::hardware::radio::V1_5::CardStatus cardStatus;
 
-RadioResponse_v1_6::RadioResponse_v1_6(RadioHidlTest_v1_6& parent) : parent_v1_6(parent) {}
+RadioResponse_v1_6::RadioResponse_v1_6(RadioResponseWaiter& parent) : parent_v1_6(parent) {}
 
 /* 1.0 Apis */
 Return<void> RadioResponse_v1_6::getIccCardStatusResponse(
@@ -87,7 +87,9 @@ Return<void> RadioResponse_v1_6::getIMSIForAppResponse(
 }
 
 Return<void> RadioResponse_v1_6::hangupConnectionResponse(
-        const ::android::hardware::radio::V1_0::RadioResponseInfo& /*info*/) {
+        const ::android::hardware::radio::V1_0::RadioResponseInfo& info) {
+    rspInfo_v1_0 = info;
+    parent_v1_6.notify(info.serial);
     return Void();
 }
 
@@ -749,7 +751,9 @@ Return<void> RadioResponse_v1_6::acknowledgeRequest(int32_t /*serial*/) {
 
 /* 1.1 Apis */
 Return<void> RadioResponse_v1_6::setCarrierInfoForImsiEncryptionResponse(
-        const ::android::hardware::radio::V1_0::RadioResponseInfo& /*info*/) {
+        const ::android::hardware::radio::V1_0::RadioResponseInfo& info) {
+    rspInfo_v1_0 = info;
+    parent_v1_6.notify(info.serial);
     return Void();
 }
 
@@ -849,7 +853,9 @@ Return<void> RadioResponse_v1_6::getModemStackStatusResponse(
 
 /* 1.4 Apis */
 Return<void> RadioResponse_v1_6::emergencyDialResponse(
-        const ::android::hardware::radio::V1_0::RadioResponseInfo& /*info*/) {
+        const ::android::hardware::radio::V1_0::RadioResponseInfo& info) {
+    rspInfo_v1_0 = info;
+    parent_v1_6.notify(info.serial);
     return Void();
 }
 
@@ -1059,6 +1065,7 @@ Return<void> RadioResponse_v1_6::setupDataCallResponse_1_6(
     parent_v1_6.notify(info.serial);
     return Void();
 }
+
 Return<void> RadioResponse_v1_6::setNrDualConnectivityStateResponse(
         const ::android::hardware::radio::V1_6::RadioResponseInfo& info) {
     rspInfo = info;
@@ -1226,6 +1233,31 @@ Return<void> RadioResponse_v1_6::getSlicingConfigResponse(
         const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
         const ::android::hardware::radio::V1_6::SlicingConfig& /*slicingConfig*/) {
     rspInfo = info;
+    parent_v1_6.notify(info.serial);
+    return Void();
+}
+
+Return<void> RadioResponse_v1_6::getSimPhonebookRecordsResponse(
+        const ::android::hardware::radio::V1_6::RadioResponseInfo& info) {
+    rspInfo = info;
+    parent_v1_6.notify(info.serial);
+    return Void();
+}
+
+Return<void> RadioResponse_v1_6::getSimPhonebookCapacityResponse(
+        const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+        const ::android::hardware::radio::V1_6::PhonebookCapacity& capacity) {
+    rspInfo = info;
+    this->capacity = capacity;
+    parent_v1_6.notify(info.serial);
+    return Void();
+}
+
+Return<void> RadioResponse_v1_6::updateSimPhonebookRecordsResponse(
+        const ::android::hardware::radio::V1_6::RadioResponseInfo& info,
+        int32_t updatedRecordIndex) {
+    rspInfo = info;
+    this->updatedRecordIndex = updatedRecordIndex;
     parent_v1_6.notify(info.serial);
     return Void();
 }

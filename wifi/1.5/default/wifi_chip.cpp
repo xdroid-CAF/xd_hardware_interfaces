@@ -354,7 +354,7 @@ WifiChip::WifiChip(
     ChipId chip_id, bool is_primary,
     const std::weak_ptr<legacy_hal::WifiLegacyHal> legacy_hal,
     const std::weak_ptr<mode_controller::WifiModeController> mode_controller,
-    const std::weak_ptr<iface_util::WifiIfaceUtil> iface_util,
+    const std::shared_ptr<iface_util::WifiIfaceUtil> iface_util,
     const std::weak_ptr<feature_flags::WifiFeatureFlags> feature_flags,
     const std::function<void(const std::string&)>& handler)
     : chip_id_(chip_id),
@@ -748,6 +748,13 @@ Return<void> WifiChip::getUsableChannels(
                            ifaceModeMask, filterMask);
 }
 
+Return<void> WifiChip::triggerSubsystemRestart(
+    triggerSubsystemRestart_cb hidl_status_cb) {
+    return validateAndCall(this, WifiStatusCode::ERROR_WIFI_CHIP_INVALID,
+                           &WifiChip::triggerSubsystemRestartInternal,
+                           hidl_status_cb);
+}
+
 void WifiChip::QcRemoveAndClearDynamicIfaces() {
     for (const auto& iface : created_ap_ifaces_) {
         std::string ifname = iface->getName();
@@ -967,7 +974,7 @@ sp<WifiApIface> WifiChip::newWifiApIface(std::string& ifname) {
             ap_instances = it.second;
         }
     }
-    iface_util_.lock()->setRandomMacAddressIndex(ap_ifaces_.size());
+    iface_util_->setRandomMacAddressIndex(ap_ifaces_.size());
     sp<WifiApIface> iface =
         new WifiApIface(ifname, ap_instances, legacy_hal_, iface_util_);
     ap_ifaces_.push_back(iface);
@@ -1022,14 +1029,14 @@ WifiChip::createBridgedApIfaceInternal() {
         }
     }
     br_ifaces_ap_instances_[br_ifname] = ap_instances;
-    if (!iface_util_.lock()->createBridge(br_ifname)) {
+    if (!iface_util_->createBridge(br_ifname)) {
         LOG(ERROR) << "Failed createBridge - br_name=" << br_ifname.c_str();
         invalidateAndClearBridgedAp(br_ifname);
         return {createWifiStatus(WifiStatusCode::ERROR_NOT_AVAILABLE), {}};
     }
     for (auto const& instance : ap_instances) {
         // Bind ap instance interface to AP bridge
-        if (!iface_util_.lock()->addIfaceToBridge(br_ifname, instance)) {
+        if (!iface_util_->addIfaceToBridge(br_ifname, instance)) {
             LOG(ERROR) << "Failed add if to Bridge - if_name="
                        << instance.c_str();
             invalidateAndClearBridgedAp(br_ifname);
@@ -1093,8 +1100,7 @@ WifiStatus WifiChip::removeIfaceInstanceFromBridgedApIfaceInternal(
         if (it.first == ifname) {
             for (auto const& iface : it.second) {
                 if (iface == ifInstanceName) {
-                    if (!iface_util_.lock()->removeIfaceFromBridge(it.first,
-                                                                   iface)) {
+                    if (!iface_util_->removeIfaceFromBridge(it.first, iface)) {
                         LOG(ERROR)
                             << "Failed to remove interface: " << ifInstanceName
                             << " from " << ifname;
@@ -1125,7 +1131,7 @@ WifiChip::createNanIfaceInternal() {
     }
     bool is_dedicated_iface = true;
     std::string ifname = getPredefinedNanIfaceName();
-    if (ifname.empty() || !iface_util_.lock()->ifNameToIndex(ifname)) {
+    if (ifname.empty() || !iface_util_->ifNameToIndex(ifname)) {
         // Use the first shared STA iface (wlan0) if a dedicated aware iface is
         // not defined.
         ifname = getFirstActiveWlanIfaceName();
@@ -1568,6 +1574,11 @@ WifiChip::getUsableChannelsInternal(WifiBand band, uint32_t ifaceModeMask,
         return {createWifiStatus(WifiStatusCode::ERROR_UNKNOWN), {}};
     }
     return {createWifiStatus(WifiStatusCode::SUCCESS), hidl_usable_channels};
+}
+
+WifiStatus WifiChip::triggerSubsystemRestartInternal() {
+    auto legacy_status = legacy_hal_.lock()->triggerSubsystemRestart();
+    return createWifiStatusFromLegacyError(legacy_status);
 }
 
 WifiStatus WifiChip::handleChipConfiguration(
@@ -2015,10 +2026,10 @@ std::string WifiChip::getWlanIfaceNameWithType(IfaceType type, unsigned idx) {
 void WifiChip::invalidateAndClearBridgedApAll() {
     for (auto const& it : br_ifaces_ap_instances_) {
         for (auto const& iface : it.second) {
-            iface_util_.lock()->removeIfaceFromBridge(it.first, iface);
+            iface_util_->removeIfaceFromBridge(it.first, iface);
             legacy_hal_.lock()->deleteVirtualInterface(iface);
         }
-        iface_util_.lock()->deleteBridge(it.first);
+        iface_util_->deleteBridge(it.first);
     }
     br_ifaces_ap_instances_.clear();
 }
@@ -2029,10 +2040,10 @@ void WifiChip::invalidateAndClearBridgedAp(const std::string& br_name) {
     for (auto const& it : br_ifaces_ap_instances_) {
         if (it.first == br_name) {
             for (auto const& iface : it.second) {
-                iface_util_.lock()->removeIfaceFromBridge(br_name, iface);
+                iface_util_->removeIfaceFromBridge(br_name, iface);
                 legacy_hal_.lock()->deleteVirtualInterface(iface);
             }
-            iface_util_.lock()->deleteBridge(br_name);
+            iface_util_->deleteBridge(br_name);
             br_ifaces_ap_instances_.erase(br_name);
             break;
         }

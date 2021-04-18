@@ -1,3 +1,12 @@
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "hardware_interfaces_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
 cc_binary {
     name: "android.hardware.security.keymint-service",
     relative_install_path: "hw",
@@ -30,6 +39,17 @@ cc_binary {
     srcs: [
         "service.cpp",
     ],
+    required: [
+        "RemoteProvisioner",
+        "android.hardware.hardware_keystore.xml",
+    ],
+}
+
+prebuilt_etc {
+    name: "android.hardware.hardware_keystore.xml",
+    sub_dir: "permissions",
+    vendor: true,
+    src: "android.hardware.hardware_keystore.xml",
 }
 
 cc_library {

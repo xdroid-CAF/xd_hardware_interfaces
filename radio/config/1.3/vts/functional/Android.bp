@@ -14,6 +14,15 @@
 // limitations under the License.
 //
 
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "hardware_interfaces_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
 cc_test {
     name: "VtsHalRadioConfigV1_3TargetTest",
     defaults: ["VtsHalTargetTestDefaults"],
@@ -36,4 +45,27 @@ cc_test {
         "general-tests",
         "vts",
     ],
+}
+
+cc_library_static {
+    name: "RadioConfigVtsTestResponse",
+    defaults: ["VtsHalTargetTestDefaults"],
+    srcs : [
+        "radio_config_response.cpp",
+        "radio_config_hidl_hal_test.cpp",
+    ],
+    header_libs: ["radio.util.header@1.0"],
+    static_libs: ["RadioVtsTestUtilBase"],
+    shared_libs: [
+        "android.hardware.radio@1.0",
+        "android.hardware.radio.config@1.0",
+        "android.hardware.radio.config@1.1",
+        "android.hardware.radio.config@1.2",
+        "android.hardware.radio.config@1.3",
+    ],
+}
+
+cc_library_headers {
+    name: "radio.config.util.header@1.3",
+    export_include_dirs: ["."],
 }

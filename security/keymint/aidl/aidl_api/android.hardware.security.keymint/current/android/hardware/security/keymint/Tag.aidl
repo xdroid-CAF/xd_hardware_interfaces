@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +32,7 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package android.hardware.security.keymint;
+/* @hide */
 @Backing(type="int") @VintfStability
 enum Tag {
   INVALID = 0,
@@ -98,4 +100,5 @@ enum Tag {
   CERTIFICATE_SUBJECT = -1879047185,
   CERTIFICATE_NOT_BEFORE = 1610613744,
   CERTIFICATE_NOT_AFTER = 1610613745,
+  MAX_BOOT_LEVEL = 805307378,
 }

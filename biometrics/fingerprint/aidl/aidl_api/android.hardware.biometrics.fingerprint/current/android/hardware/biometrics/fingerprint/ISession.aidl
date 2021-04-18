@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -33,17 +34,17 @@
 package android.hardware.biometrics.fingerprint;
 @VintfStability
 interface ISession {
-  void generateChallenge(in int cookie, in int timeoutSec);
-  void revokeChallenge(in int cookie, in long challenge);
-  android.hardware.biometrics.common.ICancellationSignal enroll(in int cookie, in android.hardware.keymaster.HardwareAuthToken hat);
-  android.hardware.biometrics.common.ICancellationSignal authenticate(in int cookie, in long operationId);
-  android.hardware.biometrics.common.ICancellationSignal detectInteraction(in int cookie);
-  void enumerateEnrollments(in int cookie);
-  void removeEnrollments(in int cookie, in int[] enrollmentIds);
-  void getAuthenticatorId(in int cookie);
-  void invalidateAuthenticatorId(in int cookie);
-  void resetLockout(in int cookie, in android.hardware.keymaster.HardwareAuthToken hat);
-  void close(in int cookie);
+  void generateChallenge();
+  void revokeChallenge(in long challenge);
+  android.hardware.biometrics.common.ICancellationSignal enroll(in android.hardware.keymaster.HardwareAuthToken hat);
+  android.hardware.biometrics.common.ICancellationSignal authenticate(in long operationId);
+  android.hardware.biometrics.common.ICancellationSignal detectInteraction();
+  void enumerateEnrollments();
+  void removeEnrollments(in int[] enrollmentIds);
+  void getAuthenticatorId();
+  void invalidateAuthenticatorId();
+  void resetLockout(in android.hardware.keymaster.HardwareAuthToken hat);
+  void close();
   void onPointerDown(in int pointerId, in int x, in int y, in float minor, in float major);
   void onPointerUp(in int pointerId);
   void onUiReady();

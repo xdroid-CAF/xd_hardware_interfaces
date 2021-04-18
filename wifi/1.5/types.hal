@@ -26,6 +26,7 @@ import @1.2::NanConfigRequestSupplemental;
 import @1.3::StaLinkLayerRadioStats;
 import @1.0::WifiChannelInMhz;
 import @1.0::WifiChannelWidthInMhz;
+import @1.4::WifiRateInfo;
 
 /**
  * Wifi bands defined in 80211 spec.
@@ -135,6 +136,81 @@ struct NanCapabilities {
 };
 
 /**
+ * Contention time statistics for different traffic categories.
+ */
+struct StaLinkLayerIfaceContentionTimeStats {
+    /**
+     * Data packet min contention time (usec).  It includes both the internal contention time
+     * among different access categories within the chipset and the contention time for the medium.
+     */
+    uint32_t contentionTimeMinInUsec;
+
+    /**
+     * Data packet max contention time (usec).  It includes both the internal contention time
+     * among different access categories within the chipset and the contention time for the medium.
+     */
+    uint32_t contentionTimeMaxInUsec;
+    /**
+     * Data packet average contention time (usec).  It includes both the internal contention time
+     * among different access categories within the chipset and the contention time for the medium.
+     */
+    uint32_t contentionTimeAvgInUsec;
+
+    /**
+     * Number of data packets used for contention statistics.
+     */
+    uint32_t contentionNumSamples;
+};
+
+/**
+ * Per rate statistics.  The rate is characterized by the combination of preamble, number of spatial
+ * streams, transmission bandwidth, and modulation and coding scheme (MCS).
+ */
+struct StaRateStat{
+    /**
+     * Wifi rate information: preamble, number of spatial streams, bandwidth, MCS, etc.
+     */
+    WifiRateInfo rateInfo;
+    /**
+     * Number of successfully transmitted data packets (ACK received)
+     */
+    uint32_t txMpdu;
+    /**
+     * Number of received data packets
+     */
+    uint32_t rxMpdu;
+    /**
+     * Number of data packet losses (no ACK)
+     */
+    uint32_t mpduLost;
+    /**
+     * Number of data packet retries
+     */
+    uint32_t retries;
+};
+
+/**
+ * Per peer statistics.  The types of peer include the Access Point (AP), the Tunneled Direct Link
+ * Setup (TDLS), the Group Owner (GO), the Neighbor Awareness Networking (NAN), etc.
+ */
+struct StaPeerInfo {
+    /**
+     * Station count: The total number of stations currently associated with the peer.
+     */
+    uint16_t staCount;
+    /**
+     * Channel utilization: The percentage of time (normalized to 255, i.e., x% corresponds to
+     * (int) x * 255 / 100) that the medium is sensed as busy measured by either physical or
+     * virtual carrier sense (CS) mechanism.
+     */
+    uint16_t chanUtil;
+    /**
+     * Per rate statistics
+     */
+    vec<StaRateStat> rateStats;
+};
+
+/**
  * Iface statistics for the current connection.
  */
 struct StaLinkLayerIfaceStats {
@@ -150,6 +226,46 @@ struct StaLinkLayerIfaceStats {
      * If not using time slicing (i.e SCC or DBS), set to 100.
      */
     uint8_t timeSliceDutyCycleInPercent;
+
+    /**
+     * WME Best Effort (BE) Access Category (AC) contention time statistics.
+     */
+    StaLinkLayerIfaceContentionTimeStats wmeBeContentionTimeStats;
+
+    /**
+     * WME Background (BK) Access Category (AC) contention time statistics.
+     */
+    StaLinkLayerIfaceContentionTimeStats wmeBkContentionTimeStats;
+
+    /**
+     * WME Video (VI) Access Category (AC) contention time statistics.
+     */
+    StaLinkLayerIfaceContentionTimeStats wmeViContentionTimeStats;
+
+    /**
+     * WME Voice (VO) Access Category (AC) contention time statistics.
+     */
+    StaLinkLayerIfaceContentionTimeStats wmeVoContentionTimeStats;
+
+    /**
+     * Per peer statistics.
+     */
+    vec<StaPeerInfo> peers;
+};
+
+struct StaLinkLayerRadioStats {
+    /**
+     * Baseline information as defined in HAL 1.3.
+     */
+    @1.3::StaLinkLayerRadioStats V1_3;
+
+    /**
+     * Radio ID: An implementation specific value identifying the radio interface for which the
+     * stats are produced. Framework must not interpret this value. It must use this value for
+     * persistently identifying the statistics between calls,
+     * e.g. if the HAL provides them in different order.
+     */
+    int32_t radioId;
 };
 
 /**

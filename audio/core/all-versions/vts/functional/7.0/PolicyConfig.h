@@ -16,11 +16,26 @@
 
 #pragma once
 
-// Note: it is assumed that this file is included from AudioPrimaryHidlTest.h
-// and thus it doesn't have all '#include' and 'using' directives required
-// for a standalone compilation.
+#include <optional>
+#include <set>
+#include <string>
+#include <vector>
 
+#include <gtest/gtest.h>
+#include <utils/Errors.h>
+
+// clang-format off
+#include PATH(android/hardware/audio/FILE_VERSION/types.h)
+#include PATH(android/hardware/audio/common/FILE_VERSION/types.h)
+// clang-format on
+
+#include <android_audio_policy_configuration_V7_0-enums.h>
+#include <android_audio_policy_configuration_V7_0.h>
+
+using namespace ::android::hardware::audio::common::CPP_VERSION;
+using namespace ::android::hardware::audio::CPP_VERSION;
 namespace xsd {
+using namespace ::android::audio::policy::configuration::CPP_VERSION;
 using Module = Modules::Module;
 }
 
@@ -30,68 +45,57 @@ class PolicyConfig {
         : mConfigFileName{configFileName},
           mFilePath{findExistingConfigurationFile(mConfigFileName)},
           mConfig{xsd::read(mFilePath.c_str())} {
-        if (mConfig) {
-            mStatus = OK;
-            mPrimaryModule = getModuleFromName(DeviceManager::kPrimaryDevice);
-            if (mConfig->getFirstModules()) {
-                for (const auto& module : mConfig->getFirstModules()->get_module()) {
-                    if (module.getFirstAttachedDevices()) {
-                        auto attachedDevices = module.getFirstAttachedDevices()->getItem();
-                        if (!attachedDevices.empty()) {
-                            mModulesWithDevicesNames.insert(module.getName());
-                        }
-                    }
-                }
-            }
-        }
+        init();
     }
-    status_t getStatus() const { return mStatus; }
-    std::string getError() const {
-        if (mFilePath.empty()) {
-            return std::string{"Could not find "} + mConfigFileName +
-                   " file in: " + testing::PrintToString(android::audio_get_configuration_paths());
-        } else {
-            return "Invalid config file: " + mFilePath;
-        }
+    PolicyConfig(const std::string& configPath, const std::string& configFileName)
+        : mConfigFileName{configFileName},
+          mFilePath{configPath + "/" + mConfigFileName},
+          mConfig{xsd::read(mFilePath.c_str())} {
+        init();
     }
+    android::status_t getStatus() const { return mStatus; }
+    std::string getError() const;
     const std::string& getFilePath() const { return mFilePath; }
-    const xsd::Module* getModuleFromName(const std::string& name) const {
-        if (mConfig && mConfig->getFirstModules()) {
-            for (const auto& module : mConfig->getFirstModules()->get_module()) {
-                if (module.getName() == name) return &module;
-            }
-        }
-        return nullptr;
-    }
+    const xsd::Module* getModuleFromName(const std::string& name) const;
     const xsd::Module* getPrimaryModule() const { return mPrimaryModule; }
     const std::set<std::string>& getModulesWithDevicesNames() const {
         return mModulesWithDevicesNames;
     }
-    bool haveInputProfilesInModule(const std::string& name) const {
-        auto module = getModuleFromName(name);
-        if (module && module->getFirstMixPorts()) {
-            for (const auto& mixPort : module->getFirstMixPorts()->getMixPort()) {
-                if (mixPort.getRole() == xsd::Role::sink) return true;
-            }
-        }
-        return false;
+    std::string getAttachedSinkDeviceForMixPort(const std::string& moduleName,
+                                                const std::string& mixPortName) const {
+        return findAttachedDevice(getAttachedDevices(moduleName),
+                                  getSinkDevicesForMixPort(moduleName, mixPortName));
     }
+    std::string getAttachedSourceDeviceForMixPort(const std::string& moduleName,
+                                                  const std::string& mixPortName) const {
+        return findAttachedDevice(getAttachedDevices(moduleName),
+                                  getSourceDevicesForMixPort(moduleName, mixPortName));
+    }
+    std::optional<DeviceAddress> getSinkDeviceForMixPort(const std::string& moduleName,
+                                                         const std::string& mixPortName) const;
+    std::optional<DeviceAddress> getSourceDeviceForMixPort(const std::string& moduleName,
+                                                           const std::string& mixPortName) const;
+    bool haveInputProfilesInModule(const std::string& name) const;
 
   private:
-    static std::string findExistingConfigurationFile(const std::string& fileName) {
-        for (const auto& location : android::audio_get_configuration_paths()) {
-            std::string path = location + '/' + fileName;
-            if (access(path.c_str(), F_OK) == 0) {
-                return path;
-            }
-        }
-        return std::string{};
-    }
+    static std::string findExistingConfigurationFile(const std::string& fileName);
+    std::string findAttachedDevice(const std::vector<std::string>& attachedDevices,
+                                   const std::set<std::string>& possibleDevices) const;
+    const std::vector<std::string>& getAttachedDevices(const std::string& moduleName) const;
+    std::optional<DeviceAddress> getDeviceAddressOfDevicePort(
+            const std::string& moduleName, const std::string& devicePortName) const;
+    std::string getDevicePortTagNameFromType(const std::string& moduleName,
+                                             const AudioDevice& deviceType) const;
+    std::set<std::string> getSinkDevicesForMixPort(const std::string& moduleName,
+                                                   const std::string& mixPortName) const;
+    std::set<std::string> getSourceDevicesForMixPort(const std::string& moduleName,
+                                                     const std::string& mixPortName) const;
+    void init();
 
     const std::string mConfigFileName;
     const std::string mFilePath;
     std::optional<xsd::AudioPolicyConfiguration> mConfig;
-    status_t mStatus = NO_INIT;
+    android::status_t mStatus = android::NO_INIT;
     const xsd::Module* mPrimaryModule;
     std::set<std::string> mModulesWithDevicesNames;
 };

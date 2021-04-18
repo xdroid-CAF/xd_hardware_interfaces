@@ -490,6 +490,14 @@ const ConfigDeclaration kVehicleProperties[]{
 
         {.config =
                  {
+                         .prop = toInt(VehicleProperty::PARKING_BRAKE_AUTO_APPLY),
+                         .access = VehiclePropertyAccess::READ,
+                         .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
+                 },
+         .initialValue = {.int32Values = {1}}},
+
+        {.config =
+                 {
                          .prop = toInt(VehicleProperty::FUEL_LEVEL_LOW),
                          .access = VehiclePropertyAccess::READ,
                          .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
@@ -996,6 +1004,15 @@ const ConfigDeclaration kVehicleProperties[]{
                  },
          .initialValue = {.int32Values = {LIGHT_SWITCH_AUTO}}},
 
+        {.config =
+                 {
+                         .prop = toInt(VehicleProperty::EVS_SERVICE_REQUEST),
+                         .access = VehiclePropertyAccess::READ,
+                         .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
+                 },
+         .initialValue = {.int32Values = {toInt(EvsServiceType::REARVIEW),
+                                          toInt(EvsServiceState::OFF)}}},
+
         {.config = {.prop = VEHICLE_MAP_SERVICE,
                     .access = VehiclePropertyAccess::READ_WRITE,
                     .changeMode = VehiclePropertyChangeMode::ON_CHANGE}},
@@ -1050,7 +1067,7 @@ const ConfigDeclaration kVehicleProperties[]{
         {.config =
                  {
                          .prop = toInt(VehicleProperty::SUPPORT_CUSTOMIZE_VENDOR_PERMISSION),
-                         .access = VehiclePropertyAccess::READ_WRITE,
+                         .access = VehiclePropertyAccess::READ,
                          .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
                          .configArray =
                                  {kMixedTypePropertyForTest,
@@ -1125,6 +1142,22 @@ const ConfigDeclaration kVehicleProperties[]{
                 .config =
                         {
                                 .prop = toInt(VehicleProperty::CURRENT_POWER_POLICY),
+                                .access = VehiclePropertyAccess::READ_WRITE,
+                                .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
+                        },
+        },
+        {
+                .config =
+                        {
+                                .prop = toInt(VehicleProperty::UNIX_TIME),
+                                .access = VehiclePropertyAccess::READ_WRITE,
+                                .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
+                        },
+        },
+        {
+                .config =
+                        {
+                                .prop = toInt(VehicleProperty::STORAGE_ENCRYPTION_BINDING_SEED),
                                 .access = VehiclePropertyAccess::READ_WRITE,
                                 .changeMode = VehiclePropertyChangeMode::ON_CHANGE,
                         },

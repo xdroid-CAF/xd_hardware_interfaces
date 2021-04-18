@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +32,7 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package android.hardware.security.keymint;
+/* @hide */
 @Backing(type="int") @VintfStability
 enum ErrorCode {
   OK = 0,
@@ -115,6 +117,7 @@ enum ErrorCode {
   MISSING_NOT_AFTER = -81,
   MISSING_ISSUER_SUBJECT = -82,
   INVALID_ISSUER_SUBJECT = -83,
+  BOOT_LEVEL_EXCEEDED = -84,
   UNIMPLEMENTED = -100,
   VERSION_MISMATCH = -101,
   UNKNOWN_ERROR = -1000,

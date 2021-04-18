@@ -82,7 +82,7 @@ class FrontendCallback : public IFrontendCallback {
     void scanTest(sp<IFrontend>& frontend, FrontendConfig config, FrontendScanType type);
 
     // Helper methods
-    uint32_t getTargetFrequency(FrontendSettings settings, FrontendType type);
+    uint32_t getTargetFrequency(FrontendSettings settings);
     void resetBlindScanStartingFrequency(FrontendConfig& config, uint32_t resetingFreq);
 
   private:
@@ -122,6 +122,9 @@ class FrontendTests {
     AssertionResult stopTuneFrontend(bool testWithDemux);
     AssertionResult closeFrontend();
     AssertionResult getFrontendDtmbCaps(uint32_t);
+
+    AssertionResult linkCiCam(uint32_t ciCamId);
+    AssertionResult unlinkCiCam(uint32_t ciCamId);
 
     void getFrontendIdByType(FrontendType feType, uint32_t& feId);
     void tuneTest(FrontendConfig frontendConf);
