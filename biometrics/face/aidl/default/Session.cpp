@@ -52,6 +52,12 @@ ndk::ScopedAStatus Session::revokeChallenge(int64_t challenge) {
     return ndk::ScopedAStatus::ok();
 }
 
+ndk::ScopedAStatus Session::getEnrollmentConfig(EnrollmentType /*enrollmentType*/,
+                                                std::vector<EnrollmentStageConfig>* return_val) {
+    *return_val = {};
+    return ndk::ScopedAStatus::ok();
+}
+
 ndk::ScopedAStatus Session::enroll(
         const keymaster::HardwareAuthToken& /*hat*/, EnrollmentType /*enrollmentType*/,
         const std::vector<Feature>& /*features*/, const NativeHandle& /*previewSurface*/,
@@ -92,14 +98,13 @@ ndk::ScopedAStatus Session::removeEnrollments(const std::vector<int32_t>& /*enro
     return ndk::ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Session::getFeatures(int32_t /*enrollmentId*/) {
+ndk::ScopedAStatus Session::getFeatures() {
     LOG(INFO) << "getFeatures";
     return ndk::ScopedAStatus::ok();
 }
 
 ndk::ScopedAStatus Session::setFeature(const keymaster::HardwareAuthToken& /*hat*/,
-                                       int32_t /*enrollmentId*/, Feature /*feature*/,
-                                       bool /*enabled*/) {
+                                       Feature /*feature*/, bool /*enabled*/) {
     LOG(INFO) << "setFeature";
     return ndk::ScopedAStatus::ok();
 }
