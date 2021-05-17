@@ -17,6 +17,7 @@
 package android.hardware.biometrics.face;
 
 import android.hardware.biometrics.common.ICancellationSignal;
+import android.hardware.biometrics.face.EnrollmentStageConfig;
 import android.hardware.biometrics.face.EnrollmentType;
 import android.hardware.biometrics.face.Feature;
 import android.hardware.common.NativeHandle;
@@ -104,9 +105,9 @@ interface ISession {
      * each of the stages.
      *
      * @param enrollmentType See the EnrollmentType enum.
-     * @return A list of EnrollmentStageConfig that describes each enrollment stage.
-     *
-    List<EnrollmentStageConfig> getEnrollmentConfig(in EnrollmentType enrollmentType);
+     * @return An EnrollmentStageConfig array that describes each enrollment stage.
+     */
+    EnrollmentStageConfig[] getEnrollmentConfig(in EnrollmentType enrollmentType);
 
     /**
      * enroll:
@@ -213,6 +214,7 @@ interface ISession {
      * 1) Any face is detected and the framework is notified via
      *    ISessionCallback#onInteractiondetected
      * 2) The operation was cancelled by the framework (see ICancellationSignal)
+     * 3) An error occurred, for example ERROR::TIMEOUT
      *
      * Note that if the operation is canceled, the implementation must notify the framework via
      * ISessionCallback#onError with Error::CANCELED.
@@ -248,38 +250,34 @@ interface ISession {
     /**
      * getFeatures:
      *
-     * Returns a list of currently enabled features for the provided enrollmentId.
+     * Returns a list of currently enabled features for this (sensorId, userId) pair.
      *
-     * If the enrollmentId is invalid, the HAL must invoke ISessionCallback#onError with
+     * If the user is not enrolled, the HAL must invoke ISessionCallback#onError with
      * Error::UNABLE_TO_PROCESS.
      *
      * The HAL must notify the framework about the result by calling
      * ISessionCallback#onFeaturesRetrieved.
-     *
-     * @param enrollmentId the ID of the enrollment for which the features are requested.
      */
-    void getFeatures(in int enrollmentId);
+    void getFeatures();
 
     /**
      * setFeature:
      *
-     * Enables or disables a feature for the given enrollmentId. Because certain features may
+     * Enables or disables a feature for this (sensorId, userId) pair. Because certain features may
      * decrease security, the user must enter their password before this method is invoked
      * (see @param hat). The HAL must verify the hat before changing any feature state.
      *
-     * If either the hat or enrollmentId is invalid, the HAL must invoke ISessionCallback#onError
-     * with Error::UNABLE_TO_PROCESS.
+     * If the hat is invalid or if the user is not enrolled, the HAL must invoke
+     * ISessionCallback#onError with Error::UNABLE_TO_PROCESS.
      *
      * After the feature is successfully set, the HAL must notify the framework by calling
      * ISessionCallback#onFeatureSet.
      *
      * @param hat HardwareAuthToken See above documentation.
-     * @param enrollmentId the ID of the enrollment for which the feature update is requested.
      * @param feature The feature to be enabled or disabled.
      * @param enabled Whether the provided features should be enabled or disabled.
      */
-    void setFeature(
-            in HardwareAuthToken hat, in int enrollmentId, in Feature feature, boolean enabled);
+    void setFeature(in HardwareAuthToken hat, in Feature feature, boolean enabled);
 
     /**
      * getAuthenticatorId:

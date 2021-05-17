@@ -22,9 +22,13 @@
 
 #include <android-base/logging.h>
 #include <android/binder_manager.h>
+#include <cppbor_parse.h>
 #include <cutils/properties.h>
+#include <gmock/gmock.h>
 #include <openssl/mem.h>
+#include <remote_prov/remote_prov_utils.h>
 
+#include <keymaster/cppcose/cppcose.h>
 #include <keymint_support/attestation_record.h>
 #include <keymint_support/key_param_output.h>
 #include <keymint_support/keymint_utils.h>
@@ -32,6 +36,7 @@
 
 namespace aidl::android::hardware::security::keymint {
 
+using namespace cppcose;
 using namespace std::literals::chrono_literals;
 using std::endl;
 using std::optional;
@@ -39,6 +44,7 @@ using std::unique_ptr;
 using ::testing::AssertionFailure;
 using ::testing::AssertionResult;
 using ::testing::AssertionSuccess;
+using ::testing::MatchesRegex;
 
 ::std::ostream& operator<<(::std::ostream& os, const AuthorizationSet& set) {
     if (set.size() == 0)
@@ -811,30 +817,6 @@ const vector<KeyParameter>& KeyMintAidlTestBase::SecLevelAuthorizations(
     return (found == key_characteristics.end()) ? kEmptyAuthList : found->authorizations;
 }
 
-AuthorizationSet KeyMintAidlTestBase::HwEnforcedAuthorizations(
-        const vector<KeyCharacteristics>& key_characteristics) {
-    AuthorizationSet authList;
-    for (auto& entry : key_characteristics) {
-        if (entry.securityLevel == SecurityLevel::STRONGBOX ||
-            entry.securityLevel == SecurityLevel::TRUSTED_ENVIRONMENT) {
-            authList.push_back(AuthorizationSet(entry.authorizations));
-        }
-    }
-    return authList;
-}
-
-AuthorizationSet KeyMintAidlTestBase::SwEnforcedAuthorizations(
-        const vector<KeyCharacteristics>& key_characteristics) {
-    AuthorizationSet authList;
-    for (auto& entry : key_characteristics) {
-        if (entry.securityLevel == SecurityLevel::SOFTWARE ||
-            entry.securityLevel == SecurityLevel::KEYSTORE) {
-            authList.push_back(AuthorizationSet(entry.authorizations));
-        }
-    }
-    return authList;
-}
-
 ErrorCode KeyMintAidlTestBase::UseAesKey(const vector<uint8_t>& aesKeyBlob) {
     auto [result, ciphertext] = ProcessMessage(
             aesKeyBlob, KeyPurpose::ENCRYPT, "1234567890123456",
@@ -861,6 +843,66 @@ ErrorCode KeyMintAidlTestBase::UseEcdsaKey(const vector<uint8_t>& ecdsaKeyBlob) 
     auto [result, signature] = ProcessMessage(ecdsaKeyBlob, KeyPurpose::SIGN, "a",
                                               AuthorizationSetBuilder().Digest(Digest::SHA_2_256));
     return result;
+}
+
+void verify_serial(X509* cert, const uint64_t expected_serial) {
+    BIGNUM_Ptr ser(BN_new());
+    EXPECT_TRUE(ASN1_INTEGER_to_BN(X509_get_serialNumber(cert), ser.get()));
+
+    uint64_t serial;
+    EXPECT_TRUE(BN_get_u64(ser.get(), &serial));
+    EXPECT_EQ(serial, expected_serial);
+}
+
+// Please set self_signed to true for fake certificates or self signed
+// certificates
+void verify_subject(const X509* cert,       //
+                    const string& subject,  //
+                    bool self_signed) {
+    char* cert_issuer =  //
+            X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+
+    char* cert_subj = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+
+    string expected_subject("/CN=");
+    if (subject.empty()) {
+        expected_subject.append("Android Keystore Key");
+    } else {
+        expected_subject.append(subject);
+    }
+
+    EXPECT_STREQ(expected_subject.c_str(), cert_subj) << "Cert has wrong subject." << cert_subj;
+
+    if (self_signed) {
+        EXPECT_STREQ(cert_issuer, cert_subj)
+                << "Cert issuer and subject mismatch for self signed certificate.";
+    }
+
+    OPENSSL_free(cert_subj);
+    OPENSSL_free(cert_issuer);
+}
+
+vector<uint8_t> build_serial_blob(const uint64_t serial_int) {
+    BIGNUM_Ptr serial(BN_new());
+    EXPECT_TRUE(BN_set_u64(serial.get(), serial_int));
+
+    int len = BN_num_bytes(serial.get());
+    vector<uint8_t> serial_blob(len);
+    if (BN_bn2bin(serial.get(), serial_blob.data()) != len) {
+        return {};
+    }
+
+    return serial_blob;
+}
+
+void verify_subject_and_serial(const Certificate& certificate,  //
+                               const uint64_t expected_serial,  //
+                               const string& subject, bool self_signed) {
+    X509_Ptr cert(parse_cert_blob(certificate.encodedCertificate));
+    ASSERT_TRUE(!!cert.get());
+
+    verify_serial(cert.get(), expected_serial);
+    verify_subject(cert.get(), subject, self_signed);
 }
 
 bool verify_attestation_record(const string& challenge,                //
@@ -901,16 +943,20 @@ bool verify_attestation_record(const string& challenge,                //
     if (error != ErrorCode::OK) return false;
 
     EXPECT_GE(att_attestation_version, 3U);
+    vector<uint8_t> appId(app_id.begin(), app_id.end());
 
-    expected_sw_enforced.push_back(TAG_ATTESTATION_APPLICATION_ID,
-                                   vector<uint8_t>(app_id.begin(), app_id.end()));
+    // check challenge and app id only if we expects a non-fake certificate
+    if (challenge.length() > 0) {
+        EXPECT_EQ(challenge.length(), att_challenge.size());
+        EXPECT_EQ(0, memcmp(challenge.data(), att_challenge.data(), challenge.length()));
+
+        expected_sw_enforced.push_back(TAG_ATTESTATION_APPLICATION_ID, appId);
+    }
 
     EXPECT_GE(att_keymaster_version, 4U);
     EXPECT_EQ(security_level, att_keymaster_security_level);
     EXPECT_EQ(security_level, att_attestation_security_level);
 
-    EXPECT_EQ(challenge.length(), att_challenge.size());
-    EXPECT_EQ(0, memcmp(challenge.data(), att_challenge.data(), challenge.length()));
 
     char property_value[PROPERTY_VALUE_MAX] = {};
     // TODO(b/136282179): When running under VTS-on-GSI the TEE-backed
@@ -921,7 +967,7 @@ bool verify_attestation_record(const string& challenge,                //
             if (att_hw_enforced[i].tag == TAG_BOOT_PATCHLEVEL ||
                 att_hw_enforced[i].tag == TAG_VENDOR_PATCHLEVEL) {
                 std::string date =
-                        std::to_string(att_hw_enforced[i].value.get<KeyParameterValue::dateTime>());
+                        std::to_string(att_hw_enforced[i].value.get<KeyParameterValue::integer>());
                 // strptime seems to require delimiters, but the tag value will
                 // be YYYYMMDD
                 date.insert(6, "-");
@@ -1046,6 +1092,28 @@ string bin2hex(const vector<uint8_t>& data) {
     return retval;
 }
 
+AuthorizationSet HwEnforcedAuthorizations(const vector<KeyCharacteristics>& key_characteristics) {
+    AuthorizationSet authList;
+    for (auto& entry : key_characteristics) {
+        if (entry.securityLevel == SecurityLevel::STRONGBOX ||
+            entry.securityLevel == SecurityLevel::TRUSTED_ENVIRONMENT) {
+            authList.push_back(AuthorizationSet(entry.authorizations));
+        }
+    }
+    return authList;
+}
+
+AuthorizationSet SwEnforcedAuthorizations(const vector<KeyCharacteristics>& key_characteristics) {
+    AuthorizationSet authList;
+    for (auto& entry : key_characteristics) {
+        if (entry.securityLevel == SecurityLevel::SOFTWARE ||
+            entry.securityLevel == SecurityLevel::KEYSTORE) {
+            authList.push_back(AuthorizationSet(entry.authorizations));
+        }
+    }
+    return authList;
+}
+
 AssertionResult ChainSignaturesAreValid(const vector<Certificate>& chain) {
     std::stringstream cert_data;
 
@@ -1076,16 +1144,6 @@ AssertionResult ChainSignaturesAreValid(const vector<Certificate>& chain) {
         if (cert_issuer != signer_subj) {
             return AssertionFailure() << "Cert " << i << " has wrong issuer.\n" << cert_data.str();
         }
-
-        if (i == 0) {
-            string cert_sub = x509NameToStr(X509_get_subject_name(key_cert.get()));
-            if ("/CN=Android Keystore Key" != cert_sub) {
-                return AssertionFailure()
-                       << "Leaf cert has wrong subject, should be CN=Android Keystore Key, was "
-                       << cert_sub << '\n'
-                       << cert_data.str();
-            }
-        }
     }
 
     if (KeyMintAidlTestBase::dump_Attestations) std::cout << cert_data.str();
@@ -1095,6 +1153,144 @@ AssertionResult ChainSignaturesAreValid(const vector<Certificate>& chain) {
 X509_Ptr parse_cert_blob(const vector<uint8_t>& blob) {
     const uint8_t* p = blob.data();
     return X509_Ptr(d2i_X509(nullptr /* allocate new */, &p, blob.size()));
+}
+
+vector<uint8_t> make_name_from_str(const string& name) {
+    X509_NAME_Ptr x509_name(X509_NAME_new());
+    EXPECT_TRUE(x509_name.get() != nullptr);
+    if (!x509_name) return {};
+
+    EXPECT_EQ(1, X509_NAME_add_entry_by_txt(x509_name.get(),  //
+                                            "CN",             //
+                                            MBSTRING_ASC,
+                                            reinterpret_cast<const uint8_t*>(name.c_str()),
+                                            -1,  // len
+                                            -1,  // loc
+                                            0 /* set */));
+
+    int len = i2d_X509_NAME(x509_name.get(), nullptr /* only return length */);
+    EXPECT_GT(len, 0);
+
+    vector<uint8_t> retval(len);
+    uint8_t* p = retval.data();
+    i2d_X509_NAME(x509_name.get(), &p);
+
+    return retval;
+}
+
+namespace {
+
+void check_cose_key(const vector<uint8_t>& data, bool testMode) {
+    auto [parsedPayload, __, payloadParseErr] = cppbor::parse(data);
+    ASSERT_TRUE(parsedPayload) << "Key parse failed: " << payloadParseErr;
+
+    // The following check assumes that canonical CBOR encoding is used for the COSE_Key.
+    if (testMode) {
+        EXPECT_THAT(cppbor::prettyPrint(parsedPayload.get()),
+                    MatchesRegex("{\n"
+                                 "  1 : 2,\n"   // kty: EC2
+                                 "  3 : -7,\n"  // alg: ES256
+                                 "  -1 : 1,\n"  // EC id: P256
+                                 // The regex {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}} matches a
+                                 // sequence of 32 hexadecimal bytes, enclosed in braces and
+                                 // separated by commas. In this case, some Ed25519 public key.
+                                 "  -2 : {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}},\n"  // pub_x: data
+                                 "  -3 : {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}},\n"  // pub_y: data
+                                 "  -70000 : null,\n"                              // test marker
+                                 "}"));
+    } else {
+        EXPECT_THAT(cppbor::prettyPrint(parsedPayload.get()),
+                    MatchesRegex("{\n"
+                                 "  1 : 2,\n"   // kty: EC2
+                                 "  3 : -7,\n"  // alg: ES256
+                                 "  -1 : 1,\n"  // EC id: P256
+                                 // The regex {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}} matches a
+                                 // sequence of 32 hexadecimal bytes, enclosed in braces and
+                                 // separated by commas. In this case, some Ed25519 public key.
+                                 "  -2 : {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}},\n"  // pub_x: data
+                                 "  -3 : {(0x[0-9a-f]{2}, ){31}0x[0-9a-f]{2}},\n"  // pub_y: data
+                                 "}"));
+    }
+}
+
+}  // namespace
+
+void check_maced_pubkey(const MacedPublicKey& macedPubKey, bool testMode,
+                        vector<uint8_t>* payload_value) {
+    auto [coseMac0, _, mac0ParseErr] = cppbor::parse(macedPubKey.macedKey);
+    ASSERT_TRUE(coseMac0) << "COSE Mac0 parse failed " << mac0ParseErr;
+
+    ASSERT_NE(coseMac0->asArray(), nullptr);
+    ASSERT_EQ(coseMac0->asArray()->size(), kCoseMac0EntryCount);
+
+    auto protParms = coseMac0->asArray()->get(kCoseMac0ProtectedParams)->asBstr();
+    ASSERT_NE(protParms, nullptr);
+
+    // Header label:value of 'alg': HMAC-256
+    ASSERT_EQ(cppbor::prettyPrint(protParms->value()), "{\n  1 : 5,\n}");
+
+    auto unprotParms = coseMac0->asArray()->get(kCoseMac0UnprotectedParams)->asMap();
+    ASSERT_NE(unprotParms, nullptr);
+    ASSERT_EQ(unprotParms->size(), 0);
+
+    // The payload is a bstr holding an encoded COSE_Key
+    auto payload = coseMac0->asArray()->get(kCoseMac0Payload)->asBstr();
+    ASSERT_NE(payload, nullptr);
+    check_cose_key(payload->value(), testMode);
+
+    auto coseMac0Tag = coseMac0->asArray()->get(kCoseMac0Tag)->asBstr();
+    ASSERT_TRUE(coseMac0Tag);
+    auto extractedTag = coseMac0Tag->value();
+    EXPECT_EQ(extractedTag.size(), 32U);
+
+    // Compare with tag generated with kTestMacKey.  Should only match in test mode
+    auto testTag = cppcose::generateCoseMac0Mac(remote_prov::kTestMacKey, {} /* external_aad */,
+                                                payload->value());
+    ASSERT_TRUE(testTag) << "Tag calculation failed: " << testTag.message();
+
+    if (testMode) {
+        EXPECT_EQ(*testTag, extractedTag);
+    } else {
+        EXPECT_NE(*testTag, extractedTag);
+    }
+    if (payload_value != nullptr) {
+        *payload_value = payload->value();
+    }
+}
+
+void p256_pub_key(const vector<uint8_t>& coseKeyData, EVP_PKEY_Ptr* signingKey) {
+    // Extract x and y affine coordinates from the encoded Cose_Key.
+    auto [parsedPayload, __, payloadParseErr] = cppbor::parse(coseKeyData);
+    ASSERT_TRUE(parsedPayload) << "Key parse failed: " << payloadParseErr;
+    auto coseKey = parsedPayload->asMap();
+    const std::unique_ptr<cppbor::Item>& xItem = coseKey->get(cppcose::CoseKey::PUBKEY_X);
+    ASSERT_NE(xItem->asBstr(), nullptr);
+    vector<uint8_t> x = xItem->asBstr()->value();
+    const std::unique_ptr<cppbor::Item>& yItem = coseKey->get(cppcose::CoseKey::PUBKEY_Y);
+    ASSERT_NE(yItem->asBstr(), nullptr);
+    vector<uint8_t> y = yItem->asBstr()->value();
+
+    // Concatenate: 0x04 (uncompressed form marker) | x | y
+    vector<uint8_t> pubKeyData{0x04};
+    pubKeyData.insert(pubKeyData.end(), x.begin(), x.end());
+    pubKeyData.insert(pubKeyData.end(), y.begin(), y.end());
+
+    EC_KEY_Ptr ecKey = EC_KEY_Ptr(EC_KEY_new());
+    ASSERT_NE(ecKey, nullptr);
+    EC_GROUP_Ptr group = EC_GROUP_Ptr(EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
+    ASSERT_NE(group, nullptr);
+    ASSERT_EQ(EC_KEY_set_group(ecKey.get(), group.get()), 1);
+    EC_POINT_Ptr point = EC_POINT_Ptr(EC_POINT_new(group.get()));
+    ASSERT_NE(point, nullptr);
+    ASSERT_EQ(EC_POINT_oct2point(group.get(), point.get(), pubKeyData.data(), pubKeyData.size(),
+                                 nullptr),
+              1);
+    ASSERT_EQ(EC_KEY_set_public_key(ecKey.get(), point.get()), 1);
+
+    EVP_PKEY_Ptr pubKey = EVP_PKEY_Ptr(EVP_PKEY_new());
+    ASSERT_NE(pubKey, nullptr);
+    EVP_PKEY_assign_EC_KEY(pubKey.get(), ecKey.release());
+    *signingKey = std::move(pubKey);
 }
 
 }  // namespace test

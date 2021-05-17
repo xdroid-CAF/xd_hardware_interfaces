@@ -16,8 +16,13 @@
 
 #include "Conversions.h"
 
+#include <aidl/android/hardware/common/Ashmem.h>
+#include <aidl/android/hardware/common/MappableFile.h>
 #include <aidl/android/hardware/common/NativeHandle.h>
+#include <aidl/android/hardware/graphics/common/HardwareBuffer.h>
+#include <aidlcommonsupport/NativeHandle.h>
 #include <android-base/logging.h>
+#include <android-base/mapped_file.h>
 #include <android-base/unique_fd.h>
 #include <android/binder_auto_utils.h>
 #include <android/hardware_buffer.h>
@@ -41,6 +46,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "Utils.h"
+
 #define VERIFY_NON_NEGATIVE(value) \
     while (UNLIKELY(value < 0)) return NN_ERROR()
 
@@ -53,7 +60,6 @@ constexpr std::underlying_type_t<Type> underlyingType(Type value) {
     return static_cast<std::underlying_type_t<Type>>(value);
 }
 
-constexpr auto kVersion = android::nn::Version::ANDROID_S;
 constexpr int64_t kNoTiming = -1;
 
 }  // namespace
@@ -62,32 +68,6 @@ namespace android::nn {
 namespace {
 
 using ::aidl::android::hardware::common::NativeHandle;
-
-constexpr auto validOperandType(nn::OperandType operandType) {
-    switch (operandType) {
-        case nn::OperandType::FLOAT32:
-        case nn::OperandType::INT32:
-        case nn::OperandType::UINT32:
-        case nn::OperandType::TENSOR_FLOAT32:
-        case nn::OperandType::TENSOR_INT32:
-        case nn::OperandType::TENSOR_QUANT8_ASYMM:
-        case nn::OperandType::BOOL:
-        case nn::OperandType::TENSOR_QUANT16_SYMM:
-        case nn::OperandType::TENSOR_FLOAT16:
-        case nn::OperandType::TENSOR_BOOL8:
-        case nn::OperandType::FLOAT16:
-        case nn::OperandType::TENSOR_QUANT8_SYMM_PER_CHANNEL:
-        case nn::OperandType::TENSOR_QUANT16_ASYMM:
-        case nn::OperandType::TENSOR_QUANT8_SYMM:
-        case nn::OperandType::TENSOR_QUANT8_ASYMM_SIGNED:
-        case nn::OperandType::SUBGRAPH:
-            return true;
-        case nn::OperandType::OEM:
-        case nn::OperandType::TENSOR_OEM_BYTE:
-            return false;
-    }
-    return nn::isExtension(operandType);
-}
 
 template <typename Input>
 using UnvalidatedConvertOutput =
@@ -113,14 +93,7 @@ GeneralResult<std::vector<UnvalidatedConvertOutput<Type>>> unvalidatedConvert(
 template <typename Type>
 GeneralResult<UnvalidatedConvertOutput<Type>> validatedConvert(const Type& halObject) {
     auto canonical = NN_TRY(nn::unvalidatedConvert(halObject));
-    const auto maybeVersion = validate(canonical);
-    if (!maybeVersion.has_value()) {
-        return error() << maybeVersion.error();
-    }
-    const auto version = maybeVersion.value();
-    if (version > kVersion) {
-        return NN_ERROR() << "Insufficient version: " << version << " vs required " << kVersion;
-    }
+    NN_TRY(aidl_hal::utils::compliantVersion(canonical));
     return canonical;
 }
 
@@ -157,41 +130,38 @@ struct NativeHandleDeleter {
 
 using UniqueNativeHandle = std::unique_ptr<native_handle_t, NativeHandleDeleter>;
 
-static GeneralResult<UniqueNativeHandle> nativeHandleFromAidlHandle(const NativeHandle& handle) {
-    std::vector<base::unique_fd> fds;
-    fds.reserve(handle.fds.size());
-    for (const auto& fd : handle.fds) {
-        auto duplicatedFd = NN_TRY(dupFd(fd.get()));
-        fds.emplace_back(duplicatedFd.release());
+GeneralResult<UniqueNativeHandle> nativeHandleFromAidlHandle(const NativeHandle& handle) {
+    auto nativeHandle = UniqueNativeHandle(dupFromAidl(handle));
+    if (nativeHandle.get() == nullptr) {
+        return NN_ERROR() << "android::dupFromAidl failed to convert the common::NativeHandle to a "
+                             "native_handle_t";
     }
-
-    constexpr size_t kIntMax = std::numeric_limits<int>::max();
-    CHECK_LE(handle.fds.size(), kIntMax);
-    CHECK_LE(handle.ints.size(), kIntMax);
-    native_handle_t* nativeHandle = native_handle_create(static_cast<int>(handle.fds.size()),
-                                                         static_cast<int>(handle.ints.size()));
-    if (nativeHandle == nullptr) {
-        return NN_ERROR() << "Failed to create native_handle";
+    if (!std::all_of(nativeHandle->data + 0, nativeHandle->data + nativeHandle->numFds,
+                     [](int fd) { return fd >= 0; })) {
+        return NN_ERROR() << "android::dupFromAidl returned an invalid native_handle_t";
     }
-    for (size_t i = 0; i < fds.size(); ++i) {
-        nativeHandle->data[i] = fds[i].release();
-    }
-    std::copy(handle.ints.begin(), handle.ints.end(), &nativeHandle->data[nativeHandle->numFds]);
-
-    return UniqueNativeHandle(nativeHandle);
+    return nativeHandle;
 }
 
 }  // anonymous namespace
 
 GeneralResult<OperandType> unvalidatedConvert(const aidl_hal::OperandType& operandType) {
     VERIFY_NON_NEGATIVE(underlyingType(operandType)) << "Negative operand types are not allowed.";
-    return static_cast<OperandType>(operandType);
+    const auto canonical = static_cast<OperandType>(operandType);
+    if (canonical == OperandType::OEM || canonical == OperandType::TENSOR_OEM_BYTE) {
+        return NN_ERROR() << "Unable to convert invalid OperandType " << canonical;
+    }
+    return canonical;
 }
 
 GeneralResult<OperationType> unvalidatedConvert(const aidl_hal::OperationType& operationType) {
     VERIFY_NON_NEGATIVE(underlyingType(operationType))
             << "Negative operation types are not allowed.";
-    return static_cast<OperationType>(operationType);
+    const auto canonical = static_cast<OperationType>(operationType);
+    if (canonical == OperationType::OEM_OPERATION) {
+        return NN_ERROR() << "Unable to convert invalid OperationType OEM_OPERATION";
+    }
+    return canonical;
 }
 
 GeneralResult<DeviceType> unvalidatedConvert(const aidl_hal::DeviceType& deviceType) {
@@ -206,8 +176,7 @@ GeneralResult<Capabilities> unvalidatedConvert(const aidl_hal::Capabilities& cap
     const bool validOperandTypes = std::all_of(
             capabilities.operandPerformance.begin(), capabilities.operandPerformance.end(),
             [](const aidl_hal::OperandPerformance& operandPerformance) {
-                const auto maybeType = unvalidatedConvert(operandPerformance.type);
-                return !maybeType.has_value() ? false : validOperandType(maybeType.value());
+                return validatedConvert(operandPerformance.type).has_value();
             });
     if (!validOperandTypes) {
         return NN_ERROR() << "Invalid OperandType when unvalidatedConverting OperandPerformance in "
@@ -378,75 +347,74 @@ GeneralResult<MeasureTiming> unvalidatedConvert(bool measureTiming) {
     return measureTiming ? MeasureTiming::YES : MeasureTiming::NO;
 }
 
-static uint32_t roundUpToMultiple(uint32_t value, uint32_t multiple) {
-    return (value + multiple - 1) / multiple * multiple;
-}
-
 GeneralResult<SharedMemory> unvalidatedConvert(const aidl_hal::Memory& memory) {
-    VERIFY_NON_NEGATIVE(memory.size) << "Memory size must not be negative";
-    if (memory.size > std::numeric_limits<size_t>::max()) {
-        return NN_ERROR() << "Memory: size must be <= std::numeric_limits<size_t>::max()";
-    }
+    using Tag = aidl_hal::Memory::Tag;
+    switch (memory.getTag()) {
+        case Tag::ashmem: {
+            const auto& ashmem = memory.get<Tag::ashmem>();
+            VERIFY_NON_NEGATIVE(ashmem.size) << "Memory size must not be negative";
+            if (ashmem.size > std::numeric_limits<size_t>::max()) {
+                return NN_ERROR() << "Memory: size must be <= std::numeric_limits<size_t>::max()";
+            }
 
-    if (memory.name != "hardware_buffer_blob") {
-        return std::make_shared<const Memory>(Memory{
-                .handle = NN_TRY(unvalidatedConvertHelper(memory.handle)),
-                .size = static_cast<size_t>(memory.size),
-                .name = memory.name,
-        });
-    }
+            auto handle = Memory::Ashmem{
+                    .fd = NN_TRY(dupFd(ashmem.fd.get())),
+                    .size = static_cast<size_t>(ashmem.size),
+            };
+            return std::make_shared<const Memory>(Memory{.handle = std::move(handle)});
+        }
+        case Tag::mappableFile: {
+            const auto& mappableFile = memory.get<Tag::mappableFile>();
+            VERIFY_NON_NEGATIVE(mappableFile.length) << "Memory size must not be negative";
+            VERIFY_NON_NEGATIVE(mappableFile.offset) << "Memory offset must not be negative";
+            if (mappableFile.length > std::numeric_limits<size_t>::max()) {
+                return NN_ERROR() << "Memory: size must be <= std::numeric_limits<size_t>::max()";
+            }
+            if (mappableFile.offset > std::numeric_limits<size_t>::max()) {
+                return NN_ERROR() << "Memory: offset must be <= std::numeric_limits<size_t>::max()";
+            }
 
-    const auto size = static_cast<uint32_t>(memory.size);
-    const auto format = AHARDWAREBUFFER_FORMAT_BLOB;
-    const auto usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
-    const uint32_t width = size;
-    const uint32_t height = 1;  // height is always 1 for BLOB mode AHardwareBuffer.
-    const uint32_t layers = 1;  // layers is always 1 for BLOB mode AHardwareBuffer.
+            const size_t size = static_cast<size_t>(mappableFile.length);
+            const int prot = mappableFile.prot;
+            const int fd = mappableFile.fd.get();
+            const size_t offset = static_cast<size_t>(mappableFile.offset);
 
-    const UniqueNativeHandle handle = NN_TRY(nativeHandleFromAidlHandle(memory.handle));
-    const native_handle_t* nativeHandle = handle.get();
+            return createSharedMemoryFromFd(size, prot, fd, offset);
+        }
+        case Tag::hardwareBuffer: {
+            const auto& hardwareBuffer = memory.get<Tag::hardwareBuffer>();
 
-    // AHardwareBuffer_createFromHandle() might fail because an allocator
-    // expects a specific stride value. In that case, we try to guess it by
-    // aligning the width to small powers of 2.
-    // TODO(b/174120849): Avoid stride assumptions.
-    AHardwareBuffer* hardwareBuffer = nullptr;
-    status_t status = UNKNOWN_ERROR;
-    for (uint32_t alignment : {1, 4, 32, 64, 128, 2, 8, 16}) {
-        const uint32_t stride = roundUpToMultiple(width, alignment);
-        AHardwareBuffer_Desc desc{
-                .width = width,
-                .height = height,
-                .layers = layers,
-                .format = format,
-                .usage = usage,
-                .stride = stride,
-        };
-        status = AHardwareBuffer_createFromHandle(&desc, nativeHandle,
-                                                  AHARDWAREBUFFER_CREATE_FROM_HANDLE_METHOD_CLONE,
-                                                  &hardwareBuffer);
-        if (status == NO_ERROR) {
-            break;
+            const UniqueNativeHandle handle =
+                    NN_TRY(nativeHandleFromAidlHandle(hardwareBuffer.handle));
+            const native_handle_t* nativeHandle = handle.get();
+
+            const AHardwareBuffer_Desc desc{
+                    .width = static_cast<uint32_t>(hardwareBuffer.description.width),
+                    .height = static_cast<uint32_t>(hardwareBuffer.description.height),
+                    .layers = static_cast<uint32_t>(hardwareBuffer.description.layers),
+                    .format = static_cast<uint32_t>(hardwareBuffer.description.format),
+                    .usage = static_cast<uint64_t>(hardwareBuffer.description.usage),
+                    .stride = static_cast<uint32_t>(hardwareBuffer.description.stride),
+            };
+            AHardwareBuffer* ahwb = nullptr;
+            const status_t status = AHardwareBuffer_createFromHandle(
+                    &desc, nativeHandle, AHARDWAREBUFFER_CREATE_FROM_HANDLE_METHOD_CLONE, &ahwb);
+            if (status != NO_ERROR) {
+                return NN_ERROR() << "createFromHandle failed";
+            }
+
+            return createSharedMemoryFromAHWB(ahwb, /*takeOwnership=*/true);
         }
     }
-    if (status != NO_ERROR) {
-        return NN_ERROR(ErrorStatus::GENERAL_FAILURE)
-               << "Can't create AHardwareBuffer from handle. Error: " << status;
-    }
-
-    return std::make_shared<const Memory>(Memory{
-            .handle = HardwareBufferHandle(hardwareBuffer, /*takeOwnership=*/true),
-            .size = static_cast<size_t>(memory.size),
-            .name = memory.name,
-    });
+    return NN_ERROR() << "Unrecognized Memory::Tag: " << memory.getTag();
 }
 
 GeneralResult<Timing> unvalidatedConvert(const aidl_hal::Timing& timing) {
-    if (timing.timeInDriver < -1) {
-        return NN_ERROR() << "Timing: timeInDriver must not be less than -1";
+    if (timing.timeInDriverNs < -1) {
+        return NN_ERROR() << "Timing: timeInDriverNs must not be less than -1";
     }
-    if (timing.timeOnDevice < -1) {
-        return NN_ERROR() << "Timing: timeOnDevice must not be less than -1";
+    if (timing.timeOnDeviceNs < -1) {
+        return NN_ERROR() << "Timing: timeOnDeviceNs must not be less than -1";
     }
     constexpr auto convertTiming = [](int64_t halTiming) -> OptionalDuration {
         if (halTiming == kNoTiming) {
@@ -454,8 +422,8 @@ GeneralResult<Timing> unvalidatedConvert(const aidl_hal::Timing& timing) {
         }
         return nn::Duration(static_cast<uint64_t>(halTiming));
     };
-    return Timing{.timeOnDevice = convertTiming(timing.timeOnDevice),
-                  .timeInDriver = convertTiming(timing.timeInDriver)};
+    return Timing{.timeOnDevice = convertTiming(timing.timeOnDeviceNs),
+                  .timeInDriver = convertTiming(timing.timeInDriverNs)};
 }
 
 GeneralResult<Model::OperandValues> unvalidatedConvert(const std::vector<uint8_t>& operandValues) {
@@ -534,6 +502,11 @@ GeneralResult<SharedHandle> unvalidatedConvert(const NativeHandle& aidlNativeHan
     return std::make_shared<const Handle>(NN_TRY(unvalidatedConvertHelper(aidlNativeHandle)));
 }
 
+GeneralResult<std::vector<Operation>> unvalidatedConvert(
+        const std::vector<aidl_hal::Operation>& operations) {
+    return unvalidatedConvertVec(operations);
+}
+
 GeneralResult<SyncFence> unvalidatedConvert(const ndk::ScopedFileDescriptor& syncFence) {
     auto duplicatedFd = NN_TRY(dupFd(syncFence.get()));
     return SyncFence::create(std::move(duplicatedFd));
@@ -564,20 +537,12 @@ GeneralResult<Model> convert(const aidl_hal::Model& model) {
     return validatedConvert(model);
 }
 
-GeneralResult<Operand> convert(const aidl_hal::Operand& operand) {
-    return unvalidatedConvert(operand);
-}
-
 GeneralResult<OperandType> convert(const aidl_hal::OperandType& operandType) {
-    return unvalidatedConvert(operandType);
+    return validatedConvert(operandType);
 }
 
 GeneralResult<Priority> convert(const aidl_hal::Priority& priority) {
     return validatedConvert(priority);
-}
-
-GeneralResult<Request::MemoryPool> convert(const aidl_hal::RequestMemoryPool& memoryPool) {
-    return unvalidatedConvert(memoryPool);
 }
 
 GeneralResult<Request> convert(const aidl_hal::Request& request) {
@@ -589,15 +554,11 @@ GeneralResult<Timing> convert(const aidl_hal::Timing& timing) {
 }
 
 GeneralResult<SyncFence> convert(const ndk::ScopedFileDescriptor& syncFence) {
-    return unvalidatedConvert(syncFence);
+    return validatedConvert(syncFence);
 }
 
 GeneralResult<std::vector<Extension>> convert(const std::vector<aidl_hal::Extension>& extension) {
     return validatedConvert(extension);
-}
-
-GeneralResult<std::vector<Operation>> convert(const std::vector<aidl_hal::Operation>& operations) {
-    return unvalidatedConvert(operations);
 }
 
 GeneralResult<std::vector<SharedMemory>> convert(const std::vector<aidl_hal::Memory>& memories) {
@@ -644,14 +605,7 @@ nn::GeneralResult<std::vector<UnvalidatedConvertOutput<Type>>> unvalidatedConver
 
 template <typename Type>
 nn::GeneralResult<UnvalidatedConvertOutput<Type>> validatedConvert(const Type& canonical) {
-    const auto maybeVersion = nn::validate(canonical);
-    if (!maybeVersion.has_value()) {
-        return nn::error() << maybeVersion.error();
-    }
-    const auto version = maybeVersion.value();
-    if (version > kVersion) {
-        return NN_ERROR() << "Insufficient version: " << version << " vs required " << kVersion;
-    }
+    NN_TRY(compliantVersion(canonical));
     return utils::unvalidatedConvert(canonical);
 }
 
@@ -684,20 +638,95 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...)->overloaded<Ts...>;
 
-static nn::GeneralResult<common::NativeHandle> aidlHandleFromNativeHandle(
-        const native_handle_t& handle) {
-    common::NativeHandle aidlNativeHandle;
+nn::GeneralResult<common::NativeHandle> aidlHandleFromNativeHandle(
+        const native_handle_t& nativeHandle) {
+    auto handle = ::android::dupToAidl(&nativeHandle);
+    if (!std::all_of(handle.fds.begin(), handle.fds.end(),
+                     [](const ndk::ScopedFileDescriptor& fd) { return fd.get() >= 0; })) {
+        return NN_ERROR() << "android::dupToAidl returned an invalid common::NativeHandle";
+    }
+    return handle;
+}
 
-    aidlNativeHandle.fds.reserve(handle.numFds);
-    for (int i = 0; i < handle.numFds; ++i) {
-        auto duplicatedFd = NN_TRY(nn::dupFd(handle.data[i]));
-        aidlNativeHandle.fds.emplace_back(duplicatedFd.release());
+nn::GeneralResult<Memory> unvalidatedConvert(const nn::Memory::Ashmem& memory) {
+    if constexpr (std::numeric_limits<size_t>::max() > std::numeric_limits<int64_t>::max()) {
+        if (memory.size > std::numeric_limits<int64_t>::max()) {
+            return (
+                           NN_ERROR()
+                           << "Memory::Ashmem: size must be <= std::numeric_limits<int64_t>::max()")
+                    .
+                    operator nn::GeneralResult<Memory>();
+        }
     }
 
-    aidlNativeHandle.ints = std::vector<int>(&handle.data[handle.numFds],
-                                             &handle.data[handle.numFds + handle.numInts]);
+    auto fd = NN_TRY(nn::dupFd(memory.fd));
+    auto handle = common::Ashmem{
+            .fd = ndk::ScopedFileDescriptor(fd.release()),
+            .size = static_cast<int64_t>(memory.size),
+    };
+    return Memory::make<Memory::Tag::ashmem>(std::move(handle));
+}
 
-    return aidlNativeHandle;
+nn::GeneralResult<Memory> unvalidatedConvert(const nn::Memory::Fd& memory) {
+    if constexpr (std::numeric_limits<size_t>::max() > std::numeric_limits<int64_t>::max()) {
+        if (memory.size > std::numeric_limits<int64_t>::max()) {
+            return (NN_ERROR() << "Memory::Fd: size must be <= std::numeric_limits<int64_t>::max()")
+                    .
+                    operator nn::GeneralResult<Memory>();
+        }
+        if (memory.offset > std::numeric_limits<int64_t>::max()) {
+            return (
+                           NN_ERROR()
+                           << "Memory::Fd: offset must be <= std::numeric_limits<int64_t>::max()")
+                    .
+                    operator nn::GeneralResult<Memory>();
+        }
+    }
+
+    auto fd = NN_TRY(nn::dupFd(memory.fd));
+    auto handle = common::MappableFile{
+            .length = static_cast<int64_t>(memory.size),
+            .prot = memory.prot,
+            .fd = ndk::ScopedFileDescriptor(fd.release()),
+            .offset = static_cast<int64_t>(memory.offset),
+    };
+    return Memory::make<Memory::Tag::mappableFile>(std::move(handle));
+}
+
+nn::GeneralResult<Memory> unvalidatedConvert(const nn::Memory::HardwareBuffer& memory) {
+    const native_handle_t* nativeHandle = AHardwareBuffer_getNativeHandle(memory.handle.get());
+    if (nativeHandle == nullptr) {
+        return (NN_ERROR() << "unvalidatedConvert failed because AHardwareBuffer_getNativeHandle "
+                              "returned nullptr")
+                .
+                operator nn::GeneralResult<Memory>();
+    }
+
+    auto handle = NN_TRY(aidlHandleFromNativeHandle(*nativeHandle));
+
+    AHardwareBuffer_Desc desc;
+    AHardwareBuffer_describe(memory.handle.get(), &desc);
+
+    const auto description = graphics::common::HardwareBufferDescription{
+            .width = static_cast<int32_t>(desc.width),
+            .height = static_cast<int32_t>(desc.height),
+            .layers = static_cast<int32_t>(desc.layers),
+            .format = static_cast<graphics::common::PixelFormat>(desc.format),
+            .usage = static_cast<graphics::common::BufferUsage>(desc.usage),
+            .stride = static_cast<int32_t>(desc.stride),
+    };
+
+    auto hardwareBuffer = graphics::common::HardwareBuffer{
+            .description = std::move(description),
+            .handle = std::move(handle),
+    };
+    return Memory::make<Memory::Tag::hardwareBuffer>(std::move(hardwareBuffer));
+}
+
+nn::GeneralResult<Memory> unvalidatedConvert(const nn::Memory::Unknown& /*memory*/) {
+    return (NN_ERROR() << "Unable to convert Unknown memory type")
+            .
+            operator nn::GeneralResult<Memory>();
 }
 
 }  // namespace
@@ -732,41 +761,12 @@ nn::GeneralResult<common::NativeHandle> unvalidatedConvert(const nn::SharedHandl
 }
 
 nn::GeneralResult<Memory> unvalidatedConvert(const nn::SharedMemory& memory) {
-    CHECK(memory != nullptr);
-    if (memory->size > std::numeric_limits<int64_t>::max()) {
-        return NN_ERROR() << "Memory size doesn't fit into int64_t.";
+    if (memory == nullptr) {
+        return (NN_ERROR() << "Unable to convert nullptr memory")
+                .
+                operator nn::GeneralResult<Memory>();
     }
-    if (const auto* handle = std::get_if<nn::Handle>(&memory->handle)) {
-        return Memory{
-                .handle = NN_TRY(unvalidatedConvert(*handle)),
-                .size = static_cast<int64_t>(memory->size),
-                .name = memory->name,
-        };
-    }
-
-    const auto* ahwb = std::get<nn::HardwareBufferHandle>(memory->handle).get();
-    AHardwareBuffer_Desc bufferDesc;
-    AHardwareBuffer_describe(ahwb, &bufferDesc);
-
-    if (bufferDesc.format == AHARDWAREBUFFER_FORMAT_BLOB) {
-        CHECK_EQ(memory->size, bufferDesc.width);
-        CHECK_EQ(memory->name, "hardware_buffer_blob");
-    } else {
-        CHECK_EQ(memory->size, 0u);
-        CHECK_EQ(memory->name, "hardware_buffer");
-    }
-
-    const native_handle_t* nativeHandle = AHardwareBuffer_getNativeHandle(ahwb);
-    if (nativeHandle == nullptr) {
-        return NN_ERROR() << "unvalidatedConvert failed because AHardwareBuffer_getNativeHandle "
-                             "returned nullptr";
-    }
-
-    return Memory{
-            .handle = NN_TRY(aidlHandleFromNativeHandle(*nativeHandle)),
-            .size = static_cast<int64_t>(memory->size),
-            .name = memory->name,
-    };
+    return std::visit([](const auto& x) { return unvalidatedConvert(x); }, memory->handle);
 }
 
 nn::GeneralResult<ErrorStatus> unvalidatedConvert(const nn::ErrorStatus& errorStatus) {
@@ -797,6 +797,9 @@ nn::GeneralResult<ExecutionPreference> unvalidatedConvert(
 }
 
 nn::GeneralResult<OperandType> unvalidatedConvert(const nn::OperandType& operandType) {
+    if (operandType == nn::OperandType::OEM || operandType == nn::OperandType::TENSOR_OEM_BYTE) {
+        return NN_ERROR() << "Unable to convert invalid OperandType " << operandType;
+    }
     return static_cast<OperandType>(operandType);
 }
 
@@ -864,6 +867,9 @@ nn::GeneralResult<Operand> unvalidatedConvert(const nn::Operand& operand) {
 }
 
 nn::GeneralResult<OperationType> unvalidatedConvert(const nn::OperationType& operationType) {
+    if (operationType == nn::OperationType::OEM_OPERATION) {
+        return NN_ERROR() << "Unable to convert invalid OperationType OEM_OPERATION";
+    }
     return static_cast<OperationType>(operationType);
 }
 
@@ -958,17 +964,18 @@ nn::GeneralResult<RequestMemoryPool> unvalidatedConvert(const nn::Request::Memor
 
 nn::GeneralResult<Timing> unvalidatedConvert(const nn::Timing& timing) {
     return Timing{
-            .timeOnDevice = NN_TRY(unvalidatedConvert(timing.timeOnDevice)),
-            .timeInDriver = NN_TRY(unvalidatedConvert(timing.timeInDriver)),
+            .timeOnDeviceNs = NN_TRY(unvalidatedConvert(timing.timeOnDevice)),
+            .timeInDriverNs = NN_TRY(unvalidatedConvert(timing.timeInDriver)),
     };
 }
 
 nn::GeneralResult<int64_t> unvalidatedConvert(const nn::Duration& duration) {
-    const uint64_t nanoseconds = duration.count();
-    if (nanoseconds > std::numeric_limits<int64_t>::max()) {
-        return std::numeric_limits<int64_t>::max();
+    if (duration < nn::Duration::zero()) {
+        return NN_ERROR() << "Unable to convert invalid (negative) duration";
     }
-    return static_cast<int64_t>(nanoseconds);
+    constexpr std::chrono::nanoseconds::rep kIntMax = std::numeric_limits<int64_t>::max();
+    const auto count = duration.count();
+    return static_cast<int64_t>(std::min(count, kIntMax));
 }
 
 nn::GeneralResult<int64_t> unvalidatedConvert(const nn::OptionalDuration& optionalDuration) {
@@ -1004,7 +1011,7 @@ nn::GeneralResult<ndk::ScopedFileDescriptor> unvalidatedConvertCache(
 }
 
 nn::GeneralResult<std::vector<uint8_t>> convert(const nn::CacheToken& cacheToken) {
-    return unvalidatedConvert(cacheToken);
+    return validatedConvert(cacheToken);
 }
 
 nn::GeneralResult<BufferDesc> convert(const nn::BufferDesc& bufferDesc) {
@@ -1076,7 +1083,7 @@ nn::GeneralResult<std::vector<ndk::ScopedFileDescriptor>> convert(
 
 nn::GeneralResult<std::vector<ndk::ScopedFileDescriptor>> convert(
         const std::vector<nn::SyncFence>& syncFences) {
-    return unvalidatedConvert(syncFences);
+    return validatedConvert(syncFences);
 }
 
 nn::GeneralResult<std::vector<int32_t>> toSigned(const std::vector<uint32_t>& vec) {

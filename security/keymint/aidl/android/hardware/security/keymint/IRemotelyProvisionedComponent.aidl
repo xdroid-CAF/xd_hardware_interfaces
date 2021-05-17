@@ -19,6 +19,7 @@ package android.hardware.security.keymint;
 import android.hardware.security.keymint.DeviceInfo;
 import android.hardware.security.keymint.MacedPublicKey;
 import android.hardware.security.keymint.ProtectedData;
+import android.hardware.security.keymint.RpcHardwareInfo;
 
 /**
  * An IRemotelyProvisionedComponent is a secure-side component for which certificates can be
@@ -121,6 +122,12 @@ interface IRemotelyProvisionedComponent {
     const int STATUS_INVALID_EEK = 5;
 
     /**
+     * @return info which contains information about the underlying IRemotelyProvisionedComponent
+     *         hardware, such as version number, component name, author name, and supported curve.
+     */
+    RpcHardwareInfo getHardwareInfo();
+
+    /**
      * generateKeyPair generates a new ECDSA P-256 key pair that can be certified.  Note that this
      * method only generates ECDSA P-256 key pairs, but the interface can be extended to add methods
      * for generating keys for other algorithms, if necessary.
@@ -202,7 +209,7 @@ interface IRemotelyProvisionedComponent {
      *                2 : bstr                        // KID : EEK ID
      *                3 : -25,                        // Algorithm : ECDH-ES + HKDF-256
      *                -1 : 4,                         // Curve : X25519
-     *                -2 : bstr                       // Ed25519 public key
+     *                -2 : bstr                       // X25519 public key
      *            }
      *
      *            EekSignatureInput = [
@@ -221,7 +228,7 @@ interface IRemotelyProvisionedComponent {
      *        in the chain, which implies that it must not attempt to validate the signature.
      *
      *        If testMode is false, the method must validate the chain signatures, and must verify
-     *        that the public key in the root certifictate is in its pre-configured set of
+     *        that the public key in the root certificate is in its pre-configured set of
      *        authorized EEK root keys. If the public key is not in the database, or if signature
      *        verification fails, the method must return STATUS_INVALID_EEK.
      *
