@@ -69,24 +69,26 @@ void GnssMeasurementInterface::start(const bool enableCorrVecOutputs) {
             std::this_thread::sleep_for(std::chrono::milliseconds(mMinIntervalMillis));
         }
     });
+    mThread.detach();
 }
 
 void GnssMeasurementInterface::stop() {
     ALOGD("stop");
     mIsActive = false;
-    if (mThread.joinable()) {
-        mThread.join();
-    }
 }
 
 void GnssMeasurementInterface::reportMeasurement(const GnssData& data) {
     ALOGD("reportMeasurement()");
-    std::unique_lock<std::mutex> lock(mMutex);
-    if (sCallback == nullptr) {
-        ALOGE("%s: GnssMeasurement::sCallback is null.", __func__);
-        return;
+    std::shared_ptr<IGnssMeasurementCallback> callbackCopy;
+    {
+        std::unique_lock<std::mutex> lock(mMutex);
+        if (sCallback == nullptr) {
+            ALOGE("%s: GnssMeasurement::sCallback is null.", __func__);
+            return;
+        }
+        callbackCopy = sCallback;
     }
-    sCallback->gnssMeasurementCb(data);
+    callbackCopy->gnssMeasurementCb(data);
 }
 
 }  // namespace aidl::android::hardware::gnss
