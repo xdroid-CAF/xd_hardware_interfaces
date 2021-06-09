@@ -119,7 +119,6 @@ char nibble2hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7',
 // Attestations don't contain everything in key authorization lists, so we need to filter the key
 // lists to produce the lists that we expect to match the attestations.
 auto kTagsToFilter = {
-        Tag::BLOB_USAGE_REQUIREMENTS,  //
         Tag::CREATION_DATETIME,        //
         Tag::EC_CURVE,
         Tag::HARDWARE_TYPE,
@@ -168,9 +167,11 @@ void KeyMintAidlTestBase::InitializeKeyMint(std::shared_ptr<IKeyMintDevice> keyM
     securityLevel_ = info.securityLevel;
     name_.assign(info.keyMintName.begin(), info.keyMintName.end());
     author_.assign(info.keyMintAuthorName.begin(), info.keyMintAuthorName.end());
+    timestamp_token_required_ = info.timestampTokenRequired;
 
     os_version_ = getOsVersion();
     os_patch_level_ = getOsPatchlevel();
+    vendor_patch_level_ = getVendorPatchlevel();
 }
 
 void KeyMintAidlTestBase::SetUp() {
@@ -273,7 +274,8 @@ ErrorCode KeyMintAidlTestBase::ImportKey(const AuthorizationSet& key_desc, KeyFo
 ErrorCode KeyMintAidlTestBase::ImportWrappedKey(string wrapped_key, string wrapping_key,
                                                 const AuthorizationSet& wrapping_key_desc,
                                                 string masking_key,
-                                                const AuthorizationSet& unwrapping_params) {
+                                                const AuthorizationSet& unwrapping_params,
+                                                int64_t password_sid, int64_t biometric_sid) {
     EXPECT_EQ(ErrorCode::OK, ImportKey(wrapping_key_desc, KeyFormat::PKCS8, wrapping_key));
 
     key_characteristics_.clear();
@@ -282,8 +284,7 @@ ErrorCode KeyMintAidlTestBase::ImportWrappedKey(string wrapped_key, string wrapp
     Status result = keymint_->importWrappedKey(
             vector<uint8_t>(wrapped_key.begin(), wrapped_key.end()), key_blob_,
             vector<uint8_t>(masking_key.begin(), masking_key.end()),
-            unwrapping_params.vector_data(), 0 /* passwordSid */, 0 /* biometricSid */,
-            &creationResult);
+            unwrapping_params.vector_data(), password_sid, biometric_sid, &creationResult);
 
     if (result.isOk()) {
         EXPECT_PRED2(KeyCharacteristicsBasicallyValid, SecLevel(),
@@ -332,6 +333,11 @@ ErrorCode KeyMintAidlTestBase::DeleteAllKeys() {
     return GetReturnErrorCode(result);
 }
 
+ErrorCode KeyMintAidlTestBase::DestroyAttestationIds() {
+    Status result = keymint_->destroyAttestationIds();
+    return GetReturnErrorCode(result);
+}
+
 void KeyMintAidlTestBase::CheckedDeleteKey(vector<uint8_t>* key_blob, bool keep_key_blob) {
     ErrorCode result = DeleteKey(key_blob, keep_key_blob);
     EXPECT_TRUE(result == ErrorCode::OK || result == ErrorCode::UNIMPLEMENTED) << result << endl;
@@ -348,7 +354,7 @@ ErrorCode KeyMintAidlTestBase::Begin(KeyPurpose purpose, const vector<uint8_t>& 
     SCOPED_TRACE("Begin");
     Status result;
     BeginResult out;
-    result = keymint_->begin(purpose, key_blob, in_params.vector_data(), HardwareAuthToken(), &out);
+    result = keymint_->begin(purpose, key_blob, in_params.vector_data(), std::nullopt, &out);
 
     if (result.isOk()) {
         *out_params = out.params;
@@ -366,7 +372,7 @@ ErrorCode KeyMintAidlTestBase::Begin(KeyPurpose purpose, const vector<uint8_t>& 
     Status result;
     BeginResult out;
 
-    result = keymint_->begin(purpose, key_blob, in_params.vector_data(), HardwareAuthToken(), &out);
+    result = keymint_->begin(purpose, key_blob, in_params.vector_data(), std::nullopt, &out);
 
     if (result.isOk()) {
         *out_params = out.params;
@@ -654,6 +660,18 @@ string KeyMintAidlTestBase::EncryptMessage(const string& message, BlockMode bloc
     return ciphertext;
 }
 
+string KeyMintAidlTestBase::EncryptMessage(const string& message, BlockMode block_mode,
+                                           PaddingMode padding, uint8_t mac_length_bits) {
+    SCOPED_TRACE("EncryptMessage");
+    auto params = AuthorizationSetBuilder()
+                          .BlockMode(block_mode)
+                          .Padding(padding)
+                          .Authorization(TAG_MAC_LENGTH, mac_length_bits);
+    AuthorizationSet out_params;
+    string ciphertext = EncryptMessage(message, params, &out_params);
+    return ciphertext;
+}
+
 string KeyMintAidlTestBase::DecryptMessage(const vector<uint8_t>& key_blob,
                                            const string& ciphertext,
                                            const AuthorizationSet& params) {
@@ -744,11 +762,82 @@ vector<uint32_t> KeyMintAidlTestBase::InvalidKeySizes(Algorithm algorithm) {
                 return {224, 384, 521};
             case Algorithm::AES:
                 return {192};
+            case Algorithm::TRIPLE_DES:
+                return {56};
+            default:
+                return {};
+        }
+    } else {
+        switch (algorithm) {
+            case Algorithm::TRIPLE_DES:
+                return {56};
             default:
                 return {};
         }
     }
     return {};
+}
+
+vector<BlockMode> KeyMintAidlTestBase::ValidBlockModes(Algorithm algorithm) {
+    switch (algorithm) {
+        case Algorithm::AES:
+            return {
+                    BlockMode::CBC,
+                    BlockMode::CTR,
+                    BlockMode::ECB,
+                    BlockMode::GCM,
+            };
+        case Algorithm::TRIPLE_DES:
+            return {
+                    BlockMode::CBC,
+                    BlockMode::ECB,
+            };
+        default:
+            return {};
+    }
+}
+
+vector<PaddingMode> KeyMintAidlTestBase::ValidPaddingModes(Algorithm algorithm,
+                                                           BlockMode blockMode) {
+    switch (algorithm) {
+        case Algorithm::AES:
+            switch (blockMode) {
+                case BlockMode::CBC:
+                case BlockMode::ECB:
+                    return {PaddingMode::NONE, PaddingMode::PKCS7};
+                case BlockMode::CTR:
+                case BlockMode::GCM:
+                    return {PaddingMode::NONE};
+                default:
+                    return {};
+            };
+        case Algorithm::TRIPLE_DES:
+            switch (blockMode) {
+                case BlockMode::CBC:
+                case BlockMode::ECB:
+                    return {PaddingMode::NONE, PaddingMode::PKCS7};
+                default:
+                    return {};
+            };
+        default:
+            return {};
+    }
+}
+
+vector<PaddingMode> KeyMintAidlTestBase::InvalidPaddingModes(Algorithm algorithm,
+                                                             BlockMode blockMode) {
+    switch (algorithm) {
+        case Algorithm::AES:
+            switch (blockMode) {
+                case BlockMode::CTR:
+                case BlockMode::GCM:
+                    return {PaddingMode::PKCS7};
+                default:
+                    return {};
+            };
+        default:
+            return {};
+    }
 }
 
 vector<EcCurve> KeyMintAidlTestBase::ValidCurves() {
@@ -942,7 +1031,7 @@ bool verify_attestation_record(const string& challenge,                //
     EXPECT_EQ(ErrorCode::OK, error);
     if (error != ErrorCode::OK) return false;
 
-    EXPECT_GE(att_attestation_version, 3U);
+    EXPECT_EQ(att_attestation_version, 100U);
     vector<uint8_t> appId(app_id.begin(), app_id.end());
 
     // check challenge and app id only if we expects a non-fake certificate
@@ -953,7 +1042,7 @@ bool verify_attestation_record(const string& challenge,                //
         expected_sw_enforced.push_back(TAG_ATTESTATION_APPLICATION_ID, appId);
     }
 
-    EXPECT_GE(att_keymaster_version, 4U);
+    EXPECT_EQ(att_keymaster_version, 100U);
     EXPECT_EQ(security_level, att_keymaster_security_level);
     EXPECT_EQ(security_level, att_attestation_security_level);
 
@@ -1142,7 +1231,10 @@ AssertionResult ChainSignaturesAreValid(const vector<Certificate>& chain) {
         string cert_issuer = x509NameToStr(X509_get_issuer_name(key_cert.get()));
         string signer_subj = x509NameToStr(X509_get_subject_name(signing_cert.get()));
         if (cert_issuer != signer_subj) {
-            return AssertionFailure() << "Cert " << i << " has wrong issuer.\n" << cert_data.str();
+            return AssertionFailure() << "Cert " << i << " has wrong issuer.\n"
+                                      << " Signer subject is " << signer_subj
+                                      << " Issuer subject is " << cert_issuer << endl
+                                      << cert_data.str();
         }
     }
 
