@@ -112,11 +112,6 @@ class VibratorAidl : public testing::TestWithParam<std::tuple<int32_t, int32_t>>
     int32_t capabilities;
 };
 
-inline bool isUnknownOrUnsupported(Status status) {
-    return status.exceptionCode() == Status::EX_UNSUPPORTED_OPERATION ||
-           status.transactionError() == android::UNKNOWN_TRANSACTION;
-}
-
 static float getResonantFrequencyHz(sp<IVibrator> vibrator, int32_t capabilities) {
     float resonantFrequencyHz;
     Status status = vibrator->getResonantFrequency(&resonantFrequencyHz);
@@ -124,7 +119,7 @@ static float getResonantFrequencyHz(sp<IVibrator> vibrator, int32_t capabilities
         EXPECT_GT(resonantFrequencyHz, 0);
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
     return resonantFrequencyHz;
 }
@@ -136,7 +131,7 @@ static float getFrequencyResolutionHz(sp<IVibrator> vibrator, int32_t capabiliti
         EXPECT_GT(freqResolutionHz, 0);
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
     return freqResolutionHz;
 }
@@ -152,7 +147,7 @@ static float getFrequencyMinimumHz(sp<IVibrator> vibrator, int32_t capabilities)
         EXPECT_GT(freqMinimumHz, 0);
         EXPECT_LE(freqMinimumHz, resonantFrequencyHz);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
     return freqMinimumHz;
 }
@@ -163,7 +158,7 @@ static float getFrequencyMaximumHz(sp<IVibrator> vibrator, int32_t capabilities)
     if (capabilities & IVibrator::CAP_FREQUENCY_CONTROL) {
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
 
     float freqMaximumHz =
@@ -224,8 +219,7 @@ TEST_P(VibratorAidl, OnWithCallback) {
 TEST_P(VibratorAidl, OnCallbackNotSupported) {
     if (!(capabilities & IVibrator::CAP_ON_CALLBACK)) {
         sp<CompletionCallback> callback = new CompletionCallback([] {});
-        Status status = vibrator->on(250, callback);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, vibrator->on(250, callback).exceptionCode());
     }
 }
 
@@ -246,8 +240,8 @@ TEST_P(VibratorAidl, ValidateEffect) {
                 EXPECT_GT(lengthMs, 0);
                 usleep(lengthMs * 1000);
             } else {
-                EXPECT_TRUE(isUnknownOrUnsupported(status))
-                        << status << " " << toString(effect) << " " << toString(strength);
+                EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION)
+                    << toString(effect) << " " << toString(strength);
             }
         }
     }
@@ -276,7 +270,7 @@ TEST_P(VibratorAidl, ValidateEffectWithCallback) {
                 EXPECT_TRUE(status.isOk());
                 EXPECT_GT(lengthMs, 0);
             } else {
-                EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+                EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
             }
 
             if (!status.isOk())
@@ -299,7 +293,7 @@ TEST_P(VibratorAidl, ValidateEffectWithCallbackNotSupported) {
             sp<CompletionCallback> callback = new CompletionCallback([] {});
             int lengthMs;
             Status status = vibrator->perform(effect, strength, callback, &lengthMs);
-            EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+            EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, status.exceptionCode());
         }
     }
 }
@@ -317,8 +311,8 @@ TEST_P(VibratorAidl, InvalidEffectsUnsupported) {
         for (EffectStrength strength : kInvalidEffectStrengths) {
             int32_t lengthMs;
             Status status = vibrator->perform(effect, strength, nullptr /*callback*/, &lengthMs);
-            EXPECT_TRUE(isUnknownOrUnsupported(status))
-                    << status << " " << toString(effect) << " " << toString(strength);
+            EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION)
+                << toString(effect) << " " << toString(strength);
         }
     }
 }
@@ -344,8 +338,7 @@ TEST_P(VibratorAidl, AmplitudeOutsideRangeFails) {
 
 TEST_P(VibratorAidl, AmplitudeReturnsUnsupportedMatchingCapabilities) {
     if ((capabilities & IVibrator::CAP_AMPLITUDE_CONTROL) == 0) {
-        Status status = vibrator->setAmplitude(1);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, vibrator->setAmplitude(1).exceptionCode());
     }
 }
 
@@ -369,7 +362,7 @@ TEST_P(VibratorAidl, ExternalAmplitudeControl) {
         if (supportsExternalAmplitudeControl) {
             EXPECT_TRUE(amplitudeStatus.isOk());
         } else {
-            EXPECT_TRUE(isUnknownOrUnsupported(amplitudeStatus)) << amplitudeStatus;
+            EXPECT_EQ(amplitudeStatus.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
         }
         EXPECT_TRUE(vibrator->setExternalControl(false).isOk());
     } else {
@@ -379,8 +372,8 @@ TEST_P(VibratorAidl, ExternalAmplitudeControl) {
 
 TEST_P(VibratorAidl, ExternalControlUnsupportedMatchingCapabilities) {
     if ((capabilities & IVibrator::CAP_EXTERNAL_CONTROL) == 0) {
-        Status status = vibrator->setExternalControl(true);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                  vibrator->setExternalControl(true).exceptionCode());
     }
 }
 
@@ -417,7 +410,7 @@ TEST_P(VibratorAidl, GetPrimitiveDuration) {
             if (isPrimitiveSupported) {
                 EXPECT_EQ(Status::EX_NONE, status.exceptionCode());
             } else {
-                EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+                EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, status.exceptionCode());
             }
         }
     }
@@ -480,8 +473,8 @@ TEST_P(VibratorAidl, ComposeUnsupportedPrimitives) {
                 effect.primitive = primitive;
                 effect.scale = 1.0f;
             }
-            Status status = vibrator->compose(composite, nullptr);
-            EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+            EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                      vibrator->compose(composite, nullptr).exceptionCode());
             vibrator->off();
         }
     }
@@ -625,8 +618,8 @@ TEST_P(VibratorAidl, AlwaysOn) {
                     EXPECT_EQ(Status::EX_NONE, status.exceptionCode())
                         << toString(effect) << " " << toString(strength);
                 } else {
-                    EXPECT_TRUE(isUnknownOrUnsupported(status))
-                            << status << " " << toString(effect) << " " << toString(strength);
+                    EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, status.exceptionCode())
+                        << toString(effect) << " " << toString(strength);
                 }
             }
         }
@@ -646,7 +639,7 @@ TEST_P(VibratorAidl, GetQFactor) {
         ASSERT_GT(qFactor, 0);
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
 }
 
@@ -675,7 +668,7 @@ TEST_P(VibratorAidl, GetBandwidthAmplitudeMap) {
             ASSERT_LE(e, 1.0);
         }
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
 }
 
@@ -697,7 +690,7 @@ TEST_P(VibratorAidl, GetPwleCompositionSizeMax) {
         ASSERT_NE(maxSize, 0);
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
 }
 
@@ -710,7 +703,7 @@ TEST_P(VibratorAidl, GetSupportedBraking) {
         ASSERT_TRUE(isDefaultNoneSupported);
         EXPECT_EQ(status.exceptionCode(), Status::EX_NONE);
     } else {
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(status.exceptionCode(), Status::EX_UNSUPPORTED_OPERATION);
     }
 }
 

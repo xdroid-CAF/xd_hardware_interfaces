@@ -1,4 +1,4 @@
-<compatibility-matrix version="1.0" type="framework" level="7">
+<compatibility-matrix version="1.0" type="framework" level="6">
     <hal format="hidl" optional="true">
         <name>android.hardware.atrace</name>
         <version>1.0</version>
@@ -508,7 +508,6 @@
         <interface>
             <name>ISharedSecret</name>
             <instance>default</instance>
-            <instance>strongbox</instance>
         </interface>
     </hal>
     <hal format="hidl" optional="true">

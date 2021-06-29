@@ -71,11 +71,6 @@ class VibratorAidl : public testing::TestWithParam<std::string> {
     std::vector<int32_t> vibratorIds;
 };
 
-inline bool isUnknownOrUnsupported(Status status) {
-    return status.exceptionCode() == Status::EX_UNSUPPORTED_OPERATION ||
-           status.transactionError() == android::UNKNOWN_TRANSACTION;
-}
-
 TEST_P(VibratorAidl, ValidateExistingVibrators) {
     sp<IVibrator> vibrator;
     for (auto& id : vibratorIds) {
@@ -106,8 +101,8 @@ TEST_P(VibratorAidl, PrepareSyncedEmptySetIsInvalid) {
 
 TEST_P(VibratorAidl, PrepareSyncedNotSupported) {
     if (!(capabilities & IVibratorManager::CAP_SYNC)) {
-        Status status = manager->prepareSynced(vibratorIds);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                  manager->prepareSynced(vibratorIds).exceptionCode());
     }
 }
 
@@ -121,8 +116,8 @@ TEST_P(VibratorAidl, PrepareOnNotSupported) {
         for (auto& id : vibratorIds) {
             EXPECT_TRUE(manager->getVibrator(id, &vibrator).isOk());
             ASSERT_NE(vibrator, nullptr);
-            Status status = vibrator->on(durationMs, nullptr);
-            EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+            EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                      vibrator->on(durationMs, nullptr).exceptionCode());
         }
         EXPECT_TRUE(manager->cancelSynced().isOk());
     }
@@ -139,7 +134,7 @@ TEST_P(VibratorAidl, PreparePerformNotSupported) {
             ASSERT_NE(vibrator, nullptr);
             int32_t lengthMs = 0;
             Status status = vibrator->perform(kEffects[0], kEffectStrengths[0], nullptr, &lengthMs);
-            EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+            EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, status.exceptionCode());
         }
         EXPECT_TRUE(manager->cancelSynced().isOk());
     }
@@ -162,7 +157,7 @@ TEST_P(VibratorAidl, PrepareComposeNotSupported) {
             EXPECT_TRUE(manager->getVibrator(id, &vibrator).isOk());
             ASSERT_NE(vibrator, nullptr);
             Status status = vibrator->compose(composite, nullptr);
-            EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+            EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION, status.exceptionCode());
         }
         EXPECT_TRUE(manager->cancelSynced().isOk());
     }
@@ -196,8 +191,8 @@ TEST_P(VibratorAidl, TriggerWithCallback) {
 
 TEST_P(VibratorAidl, TriggerSyncNotSupported) {
     if (!(capabilities & IVibratorManager::CAP_SYNC)) {
-        Status status = manager->triggerSynced(nullptr);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                  manager->triggerSynced(nullptr).exceptionCode());
     }
 }
 
@@ -206,8 +201,8 @@ TEST_P(VibratorAidl, TriggerCallbackNotSupported) {
     if (!(capabilities & IVibratorManager::CAP_TRIGGER_CALLBACK)) {
         sp<CompletionCallback> callback = new CompletionCallback([] {});
         EXPECT_TRUE(manager->prepareSynced(vibratorIds).isOk());
-        Status status = manager->triggerSynced(callback);
-        EXPECT_TRUE(isUnknownOrUnsupported(status)) << status;
+        EXPECT_EQ(Status::EX_UNSUPPORTED_OPERATION,
+                  manager->triggerSynced(callback).exceptionCode());
     }
 }
 

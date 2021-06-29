@@ -234,7 +234,7 @@ enum Tag {
      * IKeyMintDevice::earlyBootEnded() is called.  Early boot keys may be created after
      * early boot.  Early boot keys may not be imported at all, if Tag::EARLY_BOOT_ONLY is
      * provided to IKeyMintDevice::importKey, the import must fail with
-     * ErrorCode::EARLY_BOOT_ENDED.
+     * ErrorCode::INVALID_ARGUMENT.
      */
     EARLY_BOOT_ONLY = (7 << 28) /* TagType:BOOL */ | 305,
 
@@ -831,23 +831,13 @@ enum Tag {
     /**
      * DEVICE_UNIQUE_ATTESTATION is an argument to IKeyMintDevice::attested key generation/import
      * operations.  It indicates that attestation using a device-unique key is requested, rather
-     * than a batch key.  When a device-unique key is used, the returned chain should contain two
-     * certificates:
-     *    * The attestation certificate, containing the attestation extension, as described in
-            KeyCreationResult.aidl.
-     *    * A self-signed root certificate, signed by the device-unique key.
-     * No additional chained certificates are provided. Only SecurityLevel::STRONGBOX
-     * IKeyMintDevices may support device-unique attestations.  SecurityLevel::TRUSTED_ENVIRONMENT
-     * IKeyMintDevices must return ErrorCode::INVALID_ARGUMENT if they receive
-     * DEVICE_UNIQUE_ATTESTATION.
+     * than a batch key.  When a device-unique key is used, only the attestation certificate is
+     * returned; no additional chained certificates are provided.  It's up to the caller to
+     * recognize the device-unique signing key.  Only SecurityLevel::STRONGBOX IKeyMintDevices may
+     * support device-unique attestations.  SecurityLevel::TRUSTED_ENVIRONMENT IKeyMintDevices must
+     * return ErrorCode::INVALID_ARGUMENT if they receive DEVICE_UNIQUE_ATTESTATION.
      * SecurityLevel::STRONGBOX IKeyMintDevices need not support DEVICE_UNIQUE_ATTESTATION, and
      * return ErrorCode::CANNOT_ATTEST_IDS if they do not support it.
-     *
-     * The caller needs to obtain the device-unique keys out-of-band and compare them against the
-     * key used to sign the self-signed root certificate.
-     * To ease this process, the IKeyMintDevice implementation should include, both in the subject
-     * and issuer fields of the self-signed root, the unique identifier of the device. Using the
-     * unique identifier will make it straightforward for the caller to link a device to its key.
      *
      * IKeyMintDevice implementations that support device-unique attestation MUST add the
      * DEVICE_UNIQUE_ATTESTATION tag to device-unique attestations.
@@ -945,15 +935,15 @@ enum Tag {
 
     /**
      * Tag::CERTIFICATE_NOT_BEFORE the beginning of the validity of the certificate in UNIX epoch
-     * time in milliseconds.  This value is used when generating attestation or self signed
-     * certificates.  ErrorCode::MISSING_NOT_BEFORE must be returned if this tag is not provided if
-     * this tag is not provided to generateKey or importKey.
+     * time in seconds.  This value is used when generating attestation or self signed certificates.
+     * ErrorCode::MISSING_NOT_BEFORE must be returned if this tag is not provided if this tag is not
+     * provided to generateKey or importKey.
      */
     CERTIFICATE_NOT_BEFORE = (6 << 28) /* TagType:DATE */ | 1008,
 
     /**
      * Tag::CERTIFICATE_NOT_AFTER the end of the validity of the certificate in UNIX epoch time in
-     * milliseconds.  This value is used when generating attestation or self signed certificates.
+     * seconds.  This value is used when generating attestation or self signed certificates.
      * ErrorCode::MISSING_NOT_AFTER must be returned if this tag is not provided to generateKey or
      * importKey.
      */
