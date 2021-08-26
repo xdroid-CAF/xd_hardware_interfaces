@@ -60,9 +60,10 @@ class SessionCallback : public BnSessionCallback {
         return ndk::ScopedAStatus::ok();
     }
 
-    ndk::ScopedAStatus onError(Error error, int32_t /*vendorCode*/) override {
+    ndk::ScopedAStatus onError(Error error, int32_t vendorCode) override {
         auto lock = std::lock_guard<std::mutex>{mMutex};
         mError = error;
+        mVendorCode = vendorCode;
         mOnErrorInvoked = true;
         mCv.notify_one();
         return ndk::ScopedAStatus::ok();
@@ -141,6 +142,7 @@ class SessionCallback : public BnSessionCallback {
     std::mutex mMutex;
     std::condition_variable mCv;
     Error mError = Error::UNKNOWN;
+    int32_t mVendorCode = 0;
     int64_t mGeneratedChallenge = 0;
     int64_t mRevokedChallenge = 0;
     bool mOnChallengeGeneratedInvoked = false;
@@ -212,12 +214,14 @@ TEST_P(Face, EnrollWithBadHatResultsInErrorTest) {
     auto hat = keymaster::HardwareAuthToken{};
     std::shared_ptr<common::ICancellationSignal> cancellationSignal;
     ASSERT_TRUE(
-            mSession->enroll(hat, EnrollmentType::DEFAULT, {}, NativeHandle{}, &cancellationSignal)
+            mSession->enroll(hat, EnrollmentType::DEFAULT, {}, std::nullopt, &cancellationSignal)
                     .isOk());
 
     // Make sure an error is returned.
     auto lock = std::unique_lock{mCb->mMutex};
     mCb->mCv.wait(lock, [this] { return mCb->mOnErrorInvoked; });
+    EXPECT_EQ(mCb->mError, Error::UNABLE_TO_PROCESS);
+    EXPECT_EQ(mCb->mVendorCode, 0);
 }
 
 TEST_P(Face, GenerateChallengeProducesUniqueChallengesTest) {
@@ -287,13 +291,15 @@ TEST_P(Face, RemoveEnrollmentsWorksTest) {
     mCb->mCv.wait(lock, [this] { return mCb->mOnEnrollmentsRemovedInvoked; });
 }
 
-TEST_P(Face, GetFeaturesWorksTest) {
+TEST_P(Face, GetFeaturesWithoutEnrollmentsResultsInUnableToProcess) {
     // Call the method.
     ASSERT_TRUE(mSession->getFeatures().isOk());
 
     // Wait for the result.
     auto lock = std::unique_lock{mCb->mMutex};
-    mCb->mCv.wait(lock, [this] { return mCb->mOnFeaturesRetrievedInvoked; });
+    mCb->mCv.wait(lock, [this] { return mCb->mOnErrorInvoked; });
+    EXPECT_EQ(mCb->mError, Error::UNABLE_TO_PROCESS);
+    EXPECT_EQ(mCb->mVendorCode, 0);
 }
 
 TEST_P(Face, GetAuthenticatorIdWorksTest) {
