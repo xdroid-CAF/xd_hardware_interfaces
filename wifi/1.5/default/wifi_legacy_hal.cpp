@@ -37,8 +37,8 @@ static constexpr uint32_t kLinkLayerStatsDataMpduSizeThreshold = 128;
 static constexpr uint32_t kMaxWakeReasonStatsArraySize = 32;
 static constexpr uint32_t kMaxRingBuffers = 10;
 static constexpr uint32_t kMaxWifiUsableChannels = 256;
-// need a long timeout (1000ms) for chips that unload their driver.
-static constexpr uint32_t kMaxStopCompleteWaitMs = 1000;
+// need a long timeout (2000ms) for chips that unload their driver.
+static constexpr uint32_t kMaxStopCompleteWaitMs = 2000;
 static constexpr char kDriverPropName[] = "wlan.driver.status";
 
 // Helper function to create a non-const char* for legacy Hal API's.
