@@ -57,6 +57,7 @@ static bool registerPassthroughServiceImplementations(Iter first, Iter last) {
 }
 
 int main(int /* argc */, char* /* argv */ []) {
+    signal(SIGPIPE, SIG_IGN);
 #ifdef ARCH_ARM_32
     android::hardware::ProcessState::initWithMmapSize(getHWBinderMmapSize());
 #endif
